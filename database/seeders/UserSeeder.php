@@ -13,6 +13,12 @@ class UserSeeder extends Seeder
         // Create sample regular users
         $users = [
             [
+                'name' => 'Super Admin',
+                'email' => 'admin@admin.com',
+                'password' => Hash::make('password'),
+                'role' => 'super_admin',
+            ],
+            [
                 'name' => 'John Manager',
                 'email' => 'john@factory.com',
                 'password' => Hash::make('password'),

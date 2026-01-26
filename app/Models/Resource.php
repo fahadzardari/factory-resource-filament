@@ -36,4 +36,36 @@ class Resource extends Model
     {
         return $this->hasMany(ResourcePriceHistory::class)->orderBy('purchase_date', 'desc');
     }
+    
+    public function batches(): HasMany
+    {
+        return $this->hasMany(ResourceBatch::class)->orderBy('purchase_date', 'asc');
+    }
+    
+    // Get total value based on all batches (accurate inventory valuation)
+    public function getTotalValueAttribute(): float
+    {
+        return $this->batches->sum(function ($batch) {
+            return $batch->quantity_remaining * $batch->purchase_price;
+        });
+    }
+    
+    // Get weighted average price across all batches
+    public function getWeightedAveragePriceAttribute(): float
+    {
+        $totalQuantity = $this->batches->sum('quantity_remaining');
+        
+        if ($totalQuantity == 0) {
+            return 0;
+        }
+        
+        return $this->total_value / $totalQuantity;
+    }
+    
+    // Get total quantity from batches (should match available_quantity)
+    public function getTotalQuantityFromBatchesAttribute(): float
+    {
+        return $this->batches->sum('quantity_remaining');
+    }
 }
+

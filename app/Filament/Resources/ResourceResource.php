@@ -125,19 +125,29 @@ class ResourceResource extends Resource
                 Tables\Columns\TextColumn::make('unit_type')
                     ->label('Unit')
                     ->sortable(),
-                Tables\Columns\TextColumn::make('purchase_price')
-                    ->label('Price')
-                    ->money('USD')
-                    ->sortable(),
-                Tables\Columns\TextColumn::make('total_quantity')
-                    ->label('Total Qty')
-                    ->numeric(decimalPlaces: 2)
-                    ->sortable(),
                 Tables\Columns\TextColumn::make('available_quantity')
                     ->label('Available Qty')
                     ->numeric(decimalPlaces: 2)
                     ->sortable()
                     ->color(fn ($state) => $state > 0 ? 'success' : 'danger'),
+                Tables\Columns\TextColumn::make('weighted_average_price')
+                    ->label('Avg Price')
+                    ->money('USD')
+                    ->sortable()
+                    ->description('Weighted average across batches')
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('total_value')
+                    ->label('Total Value')
+                    ->money('USD')
+                    ->sortable()
+                    ->description('Sum of all batch values')
+                    ->weight('bold')
+                    ->color('success'),
+                Tables\Columns\TextColumn::make('batches_count')
+                    ->label('Batches')
+                    ->counts('batches')
+                    ->sortable()
+                    ->toggleable(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -166,6 +176,7 @@ class ResourceResource extends Resource
     public static function getRelations(): array
     {
         return [
+            RelationManagers\BatchesRelationManager::class,
             RelationManagers\PriceHistoriesRelationManager::class,
         ];
     }

@@ -4,8 +4,10 @@ namespace App\Filament\Widgets;
 
 use App\Models\Project;
 use App\Models\Resource as ResourceModel;
+use App\Models\ResourceBatch;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
+use Illuminate\Support\Facades\DB;
 
 class StatsOverviewWidget extends BaseWidget
 {
@@ -16,7 +18,9 @@ class StatsOverviewWidget extends BaseWidget
         $totalProjects = Project::count();
         $activeProjects = Project::where('status', 'active')->count();
         $completedProjects = Project::where('status', 'completed')->count();
-        $totalInventoryValue = ResourceModel::sum(\DB::raw('total_quantity * purchase_price'));
+        
+        // Calculate total inventory value from all batches (accurate batch-based valuation)
+        $totalInventoryValue = ResourceBatch::sum(DB::raw('quantity_remaining * purchase_price'));
         
         return [
             Stat::make('Total Resources', $totalResources)
@@ -32,9 +36,10 @@ class StatsOverviewWidget extends BaseWidget
                 ->descriptionIcon('heroicon-o-briefcase')
                 ->color('success'),
             Stat::make('Inventory Value', '$' . number_format($totalInventoryValue, 2))
-                ->description('Total stock value')
+                ->description('Batch-based accurate valuation')
                 ->descriptionIcon('heroicon-o-currency-dollar')
                 ->color('info'),
         ];
     }
 }
+
