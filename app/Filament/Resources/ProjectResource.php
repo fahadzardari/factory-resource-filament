@@ -170,6 +170,7 @@ class ProjectResource extends Resource
     {
         return [
             RelationManagers\ResourcesRelationManager::class,
+            RelationManagers\ConsumptionsRelationManager::class,
         ];
     }
 

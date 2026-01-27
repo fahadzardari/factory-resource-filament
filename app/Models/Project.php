@@ -4,6 +4,7 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
+use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Project extends Model
 {
@@ -26,5 +27,17 @@ class Project extends Model
         return $this->belongsToMany(Resource::class)
             ->withPivot(['quantity_allocated', 'quantity_consumed', 'quantity_available', 'notes'])
             ->withTimestamps();
+    }
+
+    public function consumptions(): HasMany
+    {
+        return $this->hasMany(ProjectResourceConsumption::class);
+    }
+
+    // Get today's consumption records
+    public function todayConsumptions(): HasMany
+    {
+        return $this->hasMany(ProjectResourceConsumption::class)
+            ->whereDate('consumption_date', today());
     }
 }

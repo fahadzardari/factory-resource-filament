@@ -177,7 +177,6 @@ class ResourceResource extends Resource
     {
         return [
             RelationManagers\BatchesRelationManager::class,
-            RelationManagers\PriceHistoriesRelationManager::class,
         ];
     }
 

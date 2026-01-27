@@ -24,8 +24,8 @@ class ResourcesRelationManager extends RelationManager
         return $form
             ->schema([
                 Forms\Components\Select::make('resource_id')
-                    ->relationship('resource', 'name')
                     ->label('Resource')
+                    ->options(\App\Models\Resource::pluck('name', 'id'))
                     ->searchable()
                     ->preload()
                     ->required()
