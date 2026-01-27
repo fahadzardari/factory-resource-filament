@@ -2,6 +2,7 @@
 
 namespace App\Filament\Resources;
 
+use App\Exports\ProjectResourceUsageExport;
 use App\Filament\Resources\ProjectResource\Pages;
 use App\Filament\Resources\ProjectResource\RelationManagers;
 use App\Models\Project;
@@ -13,18 +14,18 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Illuminate\Database\Eloquent\SoftDeletingScope;
+use Maatwebsite\Excel\Facades\Excel;
 
 class ProjectResource extends Resource
 {
     protected static ?string $model = Project::class;
 
     protected static ?string $navigationIcon = 'heroicon-o-briefcase';
-    
+
     protected static ?string $navigationLabel = 'Projects';
-    
+
     protected static ?string $navigationGroup = 'Project Management';
-    
+
     protected static ?int $navigationSort = 1;
 
     public static function form(Form $form): Form
@@ -53,7 +54,7 @@ class ProjectResource extends Resource
                             ->native(false),
                     ])
                     ->columns(3),
-                    
+
                 Forms\Components\Section::make('Timeline')
                     ->schema([
                         Forms\Components\DatePicker::make('start_date')
@@ -63,7 +64,7 @@ class ProjectResource extends Resource
                             ->after('start_date'),
                     ])
                     ->columns(2),
-                    
+
                 Forms\Components\Section::make('Description')
                     ->schema([
                         Forms\Components\Textarea::make('description')
@@ -115,6 +116,16 @@ class ProjectResource extends Resource
                         'completed' => 'Completed',
                     ]),
             ])
+            ->headerActions([
+                Tables\Actions\Action::make('export')
+                    ->label('Export All Projects')
+                    ->icon('heroicon-o-document-arrow-down')
+                    ->color('success')
+                    ->action(fn () => Excel::download(
+                        new ProjectResourceUsageExport(),
+                        'project-resource-usage-' . now()->format('Y-m-d-His') . '.xlsx'
+                    )),
+            ])
             ->actions([
                 Tables\Actions\Action::make('complete')
                     ->icon('heroicon-o-check-circle')
@@ -131,7 +142,7 @@ class ProjectResource extends Resource
                                 $resource->update([
                                     'available_quantity' => $resource->available_quantity + $resource->pivot->quantity_available,
                                 ]);
-                                
+
                                 // Log transfer
                                 ResourceTransfer::create([
                                     'resource_id' => $resource->id,
@@ -144,13 +155,13 @@ class ProjectResource extends Resource
                                 ]);
                             }
                         }
-                        
+
                         // Update project status
                         $record->update([
                             'status' => 'completed',
                             'end_date' => $record->end_date ?? now(),
                         ]);
-                        
+
                         Notification::make()
                             ->success()
                             ->title('Project Completed')
@@ -162,6 +173,14 @@ class ProjectResource extends Resource
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\BulkAction::make('export')
+                        ->label('Export Selected')
+                        ->icon('heroicon-o-document-arrow-down')
+                        ->color('success')
+                        ->action(fn (Collection $records) => Excel::download(
+                            new ProjectResourceUsageExport($records->pluck('id')->toArray()),
+                            'projects-export-' . now()->format('Y-m-d-His') . '.xlsx'
+                        )),
                 ]),
             ]);
     }
