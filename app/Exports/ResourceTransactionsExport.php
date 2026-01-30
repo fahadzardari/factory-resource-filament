@@ -61,7 +61,7 @@ class ResourceTransactionsExport implements FromQuery, WithHeadings, WithMapping
     {
         return [
             $transaction->transaction_date,
-            $transaction->type,
+            $transaction->transaction_type,
             $transaction->project?->name ?? 'Hub',
             $transaction->quantity,
             $transaction->unit_price,

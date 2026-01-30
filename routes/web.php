@@ -3,5 +3,6 @@
 use Illuminate\Support\Facades\Route;
 
 Route::get('/', function () {
-    return view('welcome');
+    // Redirect to admin panel (shows login if not authenticated, dashboard if authenticated)
+    return redirect('/admin');
 });

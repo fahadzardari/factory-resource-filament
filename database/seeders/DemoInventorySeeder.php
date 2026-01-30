@@ -41,6 +41,7 @@ class DemoInventorySeeder extends Seeder
             'name' => 'Admin User',
             'email' => 'admin@spacebuilderinv.com',
             'role' => 'admin',
+            'password' => bcrypt('!kjdfiReowR21re'),
         ]);
 
         User::factory()->create([

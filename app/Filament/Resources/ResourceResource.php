@@ -63,11 +63,64 @@ class ResourceResource extends Resource
                             ->searchable()
                             ->native(false)
                             ->helperText('Group resources by type for easier management'),
-                        Forms\Components\TextInput::make('base_unit')
+                        Forms\Components\Select::make('base_unit')
                             ->label('Base Unit')
                             ->required()
-                            ->maxLength(50)
-                            ->helperText('Unit of measurement (e.g., kg, liter, piece)'),
+                            ->searchable()
+                            ->options([
+                                // Weight Units
+                                'kg' => 'Kilograms (kg) - Most common for construction materials',
+                                'g' => 'Grams (g)',
+                                'mg' => 'Milligrams (mg)',
+                                'ton' => 'Metric Tons (ton)',
+                                'lb' => 'Pounds (lb)',
+                                'oz' => 'Ounces (oz)',
+                                
+                                // Volume Units
+                                'liter' => 'Liters (L) - For liquids like paint, oil',
+                                'liters' => 'Liters (L) - Alternative spelling',
+                                'ml' => 'Milliliters (ml)',
+                                'gallon' => 'Gallons (gal)',
+                                'm3' => 'Cubic Meters (m³) - For large volumes',
+                                
+                                // Length Units
+                                'm' => 'Meters (m) - For cables, pipes, rods',
+                                'cm' => 'Centimeters (cm)',
+                                'mm' => 'Millimeters (mm)',
+                                'km' => 'Kilometers (km)',
+                                'ft' => 'Feet (ft)',
+                                'inch' => 'Inches (in)',
+                                
+                                // Area Units
+                                'sqm' => 'Square Meters (m²) - For tiles, flooring',
+                                'sqft' => 'Square Feet (ft²)',
+                                'sqcm' => 'Square Centimeters (cm²)',
+                                
+                                // Count/Piece Units
+                                'piece' => 'Pieces - For countable items',
+                                'pieces' => 'Pieces - Alternative spelling',
+                                'unit' => 'Units - Generic count',
+                                'dozen' => 'Dozen (12 items)',
+                                'box' => 'Box - Container unit',
+                                'carton' => 'Carton - Container unit',
+                                'pallet' => 'Pallet - Large container',
+                                
+                                // Construction Specific
+                                'bag' => 'Bags - For cement, sand',
+                                'sack' => 'Sacks - Similar to bags',
+                                
+                                // Other Common Units
+                                'roll' => 'Rolls - For materials on rolls',
+                                'sheet' => 'Sheets - For flat materials',
+                                'panel' => 'Panels - For wall/ceiling panels',
+                                'tile' => 'Tiles - For floor/wall tiles',
+                                'bundle' => 'Bundles - For grouped items',
+                                'set' => 'Sets - For grouped items',
+                                'pair' => 'Pairs - For matched items',
+                            ])
+                            ->helperText('Select the primary unit for this resource. You can purchase in other units - they will be converted automatically.')
+                            ->placeholder('Search for a unit...')
+                            ->native(false),
                         Forms\Components\Textarea::make('description')
                             ->maxLength(65535)
                             ->columnSpanFull()

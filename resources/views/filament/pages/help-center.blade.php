@@ -36,9 +36,16 @@
                         <li>Go to <strong>Resources</strong> in the sidebar</li>
                         <li>Click on the material you purchased</li>
                         <li>Click the green <strong>🛒 Purchase</strong> button</li>
-                        <li>Enter quantity, price, and supplier details</li>
+                        <li>Enter quantity and <strong>select purchase unit</strong> (e.g., tons, bags, liters)</li>
+                        <li>System will automatically convert to base unit</li>
+                        <li>Enter price per unit and supplier details</li>
                         <li>Materials are now in your Central Hub!</li>
                     </ol>
+                    <div class="mt-3 bg-blue-50 dark:bg-blue-950 p-3 rounded">
+                        <p class="text-sm text-blue-800 dark:text-blue-200">
+                            <strong>💡 Unit Conversion:</strong> You can buy cement in tons even if your base unit is kg. The system automatically converts (1 ton = 1000 kg)!
+                        </p>
+                    </div>
                 </div>
 
                 <div class="border-l-4 border-orange-500 pl-4">
@@ -170,6 +177,25 @@
                     <div class="mt-2 p-4 bg-purple-50 dark:bg-purple-950 rounded-lg">
                         <p class="text-gray-700 dark:text-gray-300">
                             All prices and values are in <strong>AED (UAE Dirham)</strong>. Enter prices without the currency symbol - just the number.
+                        </p>
+                    </div>
+                </details>
+
+                <details class="group">
+                    <summary class="cursor-pointer font-semibold text-gray-900 dark:text-gray-100 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg hover:bg-gray-100 dark:hover:bg-gray-600">
+                        Q: How does unit conversion work when purchasing?
+                    </summary>
+                    <div class="mt-2 p-4 bg-green-50 dark:bg-green-950 rounded-lg">
+                        <p class="text-gray-700 dark:text-gray-300 mb-2">
+                            Each resource has a <strong>base unit</strong> (e.g., kg for cement). When purchasing, you can buy in different units and the system automatically converts:
+                        </p>
+                        <ul class="list-disc list-inside text-gray-600 dark:text-gray-400 space-y-1 mb-3">
+                            <li><strong>Example 1:</strong> Resource base unit is "kg", but you buy 2 tons → System stores as 2000 kg</li>
+                            <li><strong>Example 2:</strong> Resource base unit is "liters", but you buy 5 gallons → System stores as 18.93 liters</li>
+                            <li><strong>Example 3:</strong> Resource base unit is "pieces", but you buy 3 dozen → System stores as 36 pieces</li>
+                        </ul>
+                        <p class="text-sm text-green-800 dark:text-green-200">
+                            <strong>💡 Supported conversions:</strong> Weight (kg, g, tons, lb), Volume (liters, ml, gallons), Length (m, cm, ft), Count (pieces, dozen, box), and more!
                         </p>
                     </div>
                 </details>

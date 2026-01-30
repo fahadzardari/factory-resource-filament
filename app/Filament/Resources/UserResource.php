@@ -30,6 +30,13 @@ class UserResource extends Resource
 
     public static function canViewAny(): bool
     {
+        // Only admin users can access Users management
+        return Auth::user()?->role === 'admin';
+    }
+
+    public static function shouldRegisterNavigation(): bool
+    {
+        // Hide from navigation for non-admin users
         return Auth::user()?->role === 'admin';
     }
 
@@ -47,15 +54,13 @@ class UserResource extends Resource
                             ->required()
                             ->unique(ignoreRecord: true)
                             ->maxLength(255),
-                        Forms\Components\Select::make('role')
-                            ->required()
-                            ->options([
-                                'admin' => 'Admin',
-                                'manager' => 'Manager',
-                                'user' => 'User',
-                            ])
+                        Forms\Components\TextInput::make('role')
+                            ->label('Role')
                             ->default('user')
-                            ->native(false),
+                            ->disabled()
+                            ->dehydrated()
+                            ->helperText('New users are assigned the USER role by default')
+                            ->required(),
                     ])->columns(3),
                     
                 Forms\Components\Section::make('Password')
