@@ -1,10 +1,14 @@
 <div class="space-y-2">
-    @if($getState()->isEmpty())
+    @php
+        $activities = $getState() ?? collect();
+    @endphp
+    
+    @if($activities->isEmpty())
         <div class="text-sm text-gray-500 dark:text-gray-400 italic">
             No changes recorded yet
         </div>
     @else
-        @foreach($getState() as $activity)
+        @foreach($activities as $activity)
             <div class="flex items-start space-x-3 p-3 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
                 <div class="flex-shrink-0 mt-0.5">
                     @if($activity->event === 'created')
