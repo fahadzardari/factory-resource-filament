@@ -22,7 +22,6 @@ class ResourceImportTemplate implements FromCollection, WithHeadings, WithStyles
                 'sku' => 'CEM-001',
                 'category' => 'Building Materials',
                 'base_unit' => 'kg',
-                'current_price' => 25.50,
                 'description' => 'High-grade Portland cement for construction',
             ],
             [
@@ -30,7 +29,6 @@ class ResourceImportTemplate implements FromCollection, WithHeadings, WithStyles
                 'sku' => 'STL-001',
                 'category' => 'Building Materials',
                 'base_unit' => 'kg',
-                'current_price' => 12.75,
                 'description' => '12mm diameter steel bars',
             ],
             [
@@ -38,7 +36,6 @@ class ResourceImportTemplate implements FromCollection, WithHeadings, WithStyles
                 'sku' => 'PNT-RED-001',
                 'category' => 'Finishing Materials',
                 'base_unit' => 'liters',
-                'current_price' => 45.00,
                 'description' => 'Premium red exterior paint',
             ],
         ]);
@@ -51,7 +48,6 @@ class ResourceImportTemplate implements FromCollection, WithHeadings, WithStyles
             'sku',
             'category',
             'base_unit',
-            'current_price',
             'description',
         ];
     }

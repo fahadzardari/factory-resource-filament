@@ -222,7 +222,7 @@
                         <li>Go to <strong>Resources</strong> in the sidebar</li>
                         <li>Click the <strong>📥 Import Resources</strong> button at the top</li>
                         <li>Download the template file to see the required format</li>
-                        <li>Fill in your resource details (name, SKU, category, unit, price)</li>
+                        <li>Fill in your resource details (name, SKU, category, unit, description)</li>
                         <li>Upload the completed file</li>
                         <li>The system will validate each row and show you any errors</li>
                         <li>Fix errors and re-upload if needed!</li>
@@ -266,7 +266,7 @@
                     </ul>
                     <div class="mt-3 bg-teal-50 dark:bg-teal-950 p-3 rounded">
                         <p class="text-sm text-teal-800 dark:text-teal-200">
-                            <strong>Common errors:</strong> Missing required fields, duplicate SKU codes, invalid dates, negative prices
+                            <strong>Common errors:</strong> Missing required fields, duplicate SKU codes, invalid units
                         </p>
                     </div>
                 </div>

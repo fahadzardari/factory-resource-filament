@@ -41,7 +41,7 @@ class ListResources extends ListRecords
                         ->content('📋 **Before importing:**
                         
 1. Download the template using the "Download Template" button
-2. Fill in all required fields: name, sku, base_unit, current_price
+2. Fill in all required fields: name, sku, base_unit
 3. Make sure SKU codes are unique (no duplicates)
 4. Save your file as .xlsx or .csv
 5. Upload it below

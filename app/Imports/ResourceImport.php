@@ -28,7 +28,6 @@ class ResourceImport implements ToCollection, WithHeadingRow, SkipsOnFailure
                 'sku' => ['required', 'string', 'max:50', 'unique:resources,sku'],
                 'category' => ['nullable', 'string', 'max:100'],
                 'base_unit' => ['required', 'string', 'max:20'],
-                'current_price' => ['required', 'numeric', 'min:0'],
                 'description' => ['nullable', 'string'],
             ]);
 
@@ -47,7 +46,6 @@ class ResourceImport implements ToCollection, WithHeadingRow, SkipsOnFailure
                     'sku' => $row['sku'],
                     'category' => $row['category'] ?? null,
                     'base_unit' => $row['base_unit'],
-                    'current_price' => $row['current_price'],
                     'description' => $row['description'] ?? null,
                 ]);
                 
