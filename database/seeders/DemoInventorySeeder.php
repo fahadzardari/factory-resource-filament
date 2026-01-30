@@ -19,26 +19,27 @@ class DemoInventorySeeder extends Seeder
         // Create users
         $admin = $this->createUsers();
         
-        // Create resources
-        [$cement, $steel, $bricks, $sand, $paint] = $this->createResources();
+        // // Create resources
+        // [$cement, $steel, $bricks, $sand, $paint] = $this->createResources();
         
-        // Create projects
-        [$factoryA, $factoryB, $warehouse] = $this->createProjects();
+        // // Create projects
+        // [$factoryA, $factoryB, $warehouse] = $this->createProjects();
         
-        // Run complete workflow over 3 days
-        $this->day1_InitialPurchases($cement, $steel, $bricks, $sand, $paint, $admin);
-        $this->day2_AllocationsAndConsumption($cement, $steel, $bricks, $factoryA, $admin);
-        $this->day3_MorePurchasesAllocationsAndTransfers($cement, $sand, $paint, $factoryA, $factoryB, $warehouse, $admin);
+        // // Run complete workflow over 3 days
+        // $this->day1_InitialPurchases($cement, $steel, $bricks, $sand, $paint, $admin);
+        // $this->day2_AllocationsAndConsumption($cement, $steel, $bricks, $factoryA, $admin);
+        // $this->day3_MorePurchasesAllocationsAndTransfers($cement, $sand, $paint, $factoryA, $factoryB, $warehouse, $admin);
         
-        // Display summary
-        $this->displaySummary($cement, $steel, $bricks, $sand, $paint, $factoryA, $factoryB, $warehouse);
-    }
+        // // Display summary
+        // $this->displaySummary($cement, $steel, $bricks, $sand, $paint, $factoryA, $factoryB, $warehouse);
+    
+        }
 
     private function createUsers()
     {
         $admin = User::factory()->create([
             'name' => 'Admin User',
-            'email' => 'admin@admin.com',
+            'email' => 'admin@spacebuilderinv.com',
             'role' => 'admin',
         ]);
 

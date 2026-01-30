@@ -152,11 +152,13 @@ class ViewProject extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
-            Actions\Action::make('allocate')
-                ->label('Allocate Resource')
-                ->icon('heroicon-o-plus-circle')
-                ->color('success')
-                ->visible(fn () => strtolower($this->record->status) === 'active')
+            // Primary action group for resource operations
+            Actions\ActionGroup::make([
+                Actions\Action::make('allocate')
+                    ->label('Allocate Resource')
+                    ->icon('heroicon-o-plus-circle')
+                    ->color('success')
+                    ->visible(fn () => strtolower($this->record->status) === 'active')
                 ->modalHeading('Allocate Resource from Hub to Project')
                 ->modalDescription('Move resources from the Central Hub warehouse to this project site. This will reduce Hub inventory and increase project inventory.')
                 ->modalIcon('heroicon-o-truck')
@@ -238,7 +240,7 @@ class ViewProject extends ViewRecord
                             ->send();
                     }
                 }),
-            
+
             Actions\Action::make('consume')
                 ->label('Consume Resource')
                 ->icon('heroicon-o-minus-circle')
@@ -424,8 +426,16 @@ class ViewProject extends ViewRecord
                             ->send();
                     }
                 }),
-
-            Actions\Action::make('exportDailyConsumption')
+            ])
+            ->label('Resource Operations')
+            ->icon('heroicon-o-cube')
+            ->color('primary')
+            ->button()
+            ->visible(fn () => strtolower($this->record->status) === 'active'),
+            
+            // Export actions group
+            Actions\ActionGroup::make([
+                Actions\Action::make('exportDailyConsumption')
                 ->label('Export Daily Consumption')
                 ->icon('heroicon-o-arrow-down-tray')
                 ->color('info')
@@ -487,6 +497,11 @@ class ViewProject extends ViewRecord
                         $filename
                     );
                 }),
+            ])
+            ->label('Export Reports')
+            ->icon('heroicon-o-arrow-down-tray')
+            ->color('info')
+            ->button(),
 
             Actions\Action::make('completeProject')
                 ->label('Complete Project')
