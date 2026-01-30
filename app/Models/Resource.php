@@ -6,9 +6,12 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use InvalidArgumentException;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 
 class Resource extends Model
 {
+    use LogsActivity;
     protected $fillable = [
         'name',
         'sku',
@@ -117,10 +120,16 @@ class Resource extends Model
     /**
      * Synchronize available_quantity with actual batch quantities
      * This ensures the single source of truth
+     * Applies conversion factors to convert all batches to the resource's base unit
      */
     public function syncQuantityFromBatches(): self
     {
-        $this->available_quantity = $this->batches()->sum('quantity_remaining');
+        // We must get() the batches and sum with conversion factor
+        // Cannot use sum() on query builder because it doesn't apply conversion_factor
+        $this->available_quantity = $this->batches()
+            ->get()
+            ->sum(fn($batch) => $batch->quantity_remaining * $batch->conversion_factor);
+        
         $this->saveQuietly();
         return $this;
     }
@@ -159,19 +168,39 @@ class Resource extends Model
                 break;
             }
 
-            $consumeFromBatch = min($batch->quantity_remaining, $remainingToConsume);
-            $totalCost += $consumeFromBatch * $batch->purchase_price;
+            // Convert batch quantity to base unit for comparison
+            $batchQuantityInBaseUnit = $batch->quantity_remaining * $batch->conversion_factor;
+            $consumeInBaseUnit = min($batchQuantityInBaseUnit, $remainingToConsume);
             
-            $batch->quantity_remaining -= $consumeFromBatch;
+            // Convert back to batch's unit for actual consumption
+            $consumeInBatchUnit = $consumeInBaseUnit / $batch->conversion_factor;
+            
+            // Cost is based on the batch's unit price
+            $totalCost += $consumeInBatchUnit * $batch->purchase_price;
+            
+            $batch->quantity_remaining -= $consumeInBatchUnit;
             $batch->save();
             
-            $remainingToConsume -= $consumeFromBatch;
+            $remainingToConsume -= $consumeInBaseUnit;
         }
 
         // Sync the resource quantity
         $this->syncQuantityFromBatches();
 
         return $totalCost;
+    }
+
+    /**
+     * Activity log configuration
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['name', 'sku', 'category', 'available_quantity', 'purchase_price'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn(string $eventName) => "Resource {$eventName}")
+            ->useLogName('resource');
     }
 }
 

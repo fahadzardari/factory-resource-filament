@@ -5,9 +5,12 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use InvalidArgumentException;
+use Spatie\Activitylog\Traits\LogsActivity;
+use Spatie\Activitylog\LogOptions;
 
 class ResourceBatch extends Model
 {
+    use LogsActivity;
     protected $fillable = [
         'resource_id',
         'batch_number',
@@ -201,5 +204,18 @@ class ResourceBatch extends Model
     public function getUnitLabelAttribute(): string
     {
         return self::UNIT_TYPES[$this->unit_type] ?? $this->unit_type;
+    }
+
+    /**
+     * Activity log configuration
+     */
+    public function getActivitylogOptions(): LogOptions
+    {
+        return LogOptions::defaults()
+            ->logOnly(['quantity_purchased', 'quantity_remaining', 'purchase_price', 'unit_type', 'supplier', 'notes'])
+            ->logOnlyDirty()
+            ->dontSubmitEmptyLogs()
+            ->setDescriptionForEvent(fn(string $eventName) => "Batch {$eventName}")
+            ->useLogName('batch');
     }
 }
