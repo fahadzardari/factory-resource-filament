@@ -65,14 +65,9 @@ class ViewResource extends ViewRecord
                             ->weight('bold')
                             ->color('success'),
                         
-                        Infolists\Components\TextEntry::make('weighted_avg_price')
-                            ->label('Weighted Avg Price')
-                            ->money('PKR')
-                            ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
-                        
                         Infolists\Components\TextEntry::make('hub_value')
                             ->label('Total Hub Value')
-                            ->money('PKR')
+                            ->money('AED')
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
                             ->weight('bold')
                             ->color('warning'),
@@ -82,10 +77,10 @@ class ViewResource extends ViewRecord
                             ->formatStateUsing(fn ($state, $record) => number_format($state, 2) . ' ' . $record->base_unit)
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large),
                     ])
-                    ->columns(4),
+                    ->columns(3),
 
                 Infolists\Components\Section::make('Recent Transactions')
-                    ->description('Last 10 transactions for this resource')
+                    ->description('Last 50 transactions for this resource')
                     ->schema([
                         Infolists\Components\RepeatableEntry::make('inventoryTransactions')
                             ->label('')
@@ -95,7 +90,8 @@ class ViewResource extends ViewRecord
                                     ->date()
                                     ->columnSpan(1),
                                 
-                                Infolists\Components\TextEntry::make('type')
+                                Infolists\Components\TextEntry::make('transaction_type')
+                                    ->label('Type')
                                     ->badge()
                                     ->columnSpan(1)
                                     ->color(fn (string $state): string => match ($state) {
@@ -119,16 +115,16 @@ class ViewResource extends ViewRecord
                                     ->columnSpan(1),
                                 
                                 Infolists\Components\TextEntry::make('unit_price')
-                                    ->money('PKR')
+                                    ->money('AED')
                                     ->columnSpan(1),
                                 
                                 Infolists\Components\TextEntry::make('total_value')
-                                    ->money('PKR')
+                                    ->money('AED')
                                     ->weight('bold')
                                     ->columnSpan(1),
                             ])
                             ->columns(7)
-                            ->state(fn ($record) => $record->inventoryTransactions()->latest('transaction_date')->limit(10)->get()),
+                            ->state(fn ($record) => $record->inventoryTransactions()->latest('transaction_date')->limit(50)->get()),
                     ])
                     ->collapsible()
                     ->collapsed(false),
@@ -153,7 +149,7 @@ class ViewResource extends ViewRecord
                         ->numeric()
                         ->required()
                         ->minValue(0)
-                        ->prefix('PKR'),
+                        ->prefix('AED'),
                     
                     Forms\Components\DatePicker::make('transaction_date')
                         ->label('Transaction Date')

@@ -37,12 +37,12 @@ class StatsOverviewWidget extends BaseWidget
         $totalTransactions = InventoryTransaction::count();
         
         return [
-            Stat::make('Hub Inventory Value', 'PKR ' . number_format($hubInventoryValue, 2))
+            Stat::make('Hub Inventory Value', 'AED ' . number_format($hubInventoryValue, 2))
                 ->description('Central warehouse value')
                 ->descriptionIcon('heroicon-o-building-storefront')
                 ->color('success'),
             
-            Stat::make('Allocated Inventory', 'PKR ' . number_format($allocatedValue, 2))
+            Stat::make('Allocated Inventory', 'AED ' . number_format($allocatedValue, 2))
                 ->description('Value at project sites')
                 ->descriptionIcon('heroicon-o-truck')
                 ->color('info'),

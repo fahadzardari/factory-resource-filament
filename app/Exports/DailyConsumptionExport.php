@@ -4,6 +4,7 @@ namespace App\Exports;
 
 use App\Models\InventoryTransaction;
 use App\Models\Project;
+use App\Services\StockCalculator;
 use Illuminate\Support\Collection;
 use Maatwebsite\Excel\Concerns\FromCollection;
 use Maatwebsite\Excel\Concerns\WithHeadings;
@@ -11,6 +12,8 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
+use PhpOffice\PhpSpreadsheet\Style\Color;
 
 class DailyConsumptionExport implements FromCollection, WithHeadings, WithMapping, WithStyles, WithTitle
 {
@@ -25,17 +28,22 @@ class DailyConsumptionExport implements FromCollection, WithHeadings, WithMappin
 
     public function collection(): Collection
     {
-        // Get all transactions for the day
+        // Get all resources that have EVER been at this project (have opening balance or day transactions)
+        $allProjectTransactions = InventoryTransaction::query()
+            ->where('project_id', $this->projectId)
+            ->whereDate('transaction_date', '<=', $this->date)
+            ->with(['resource'])
+            ->get();
+
+        // Get unique resources
+        $resourceIds = $allProjectTransactions->pluck('resource_id')->unique();
+        
+        // Get transactions for this specific day
         $dayTransactions = InventoryTransaction::query()
             ->where('project_id', $this->projectId)
             ->whereDate('transaction_date', $this->date)
             ->with(['resource'])
-            ->orderBy('resource_id')
-            ->orderBy('transaction_date')
             ->get();
-
-        // Get unique resources from day's transactions
-        $resourceIds = $dayTransactions->pluck('resource_id')->unique();
         
         // Calculate opening balance (all transactions before this date)
         $openingBalances = InventoryTransaction::query()
@@ -48,11 +56,29 @@ class DailyConsumptionExport implements FromCollection, WithHeadings, WithMappin
         // Build result collection
         $result = collect();
         
+        // Summary totals
+        $summaryOpeningBalance = 0;
+        $summaryPurchases = 0;
+        $summaryAllocationsIn = 0;
+        $summaryTransfersIn = 0;
+        $summaryTotalIn = 0;
+        $summaryConsumption = 0;
+        $summaryTransfersOut = 0;
+        $summaryAllocationsOut = 0;
+        $summaryTotalOut = 0;
+        $summaryClosingBalance = 0;
+        
         foreach ($resourceIds as $resourceId) {
             $resourceTransactions = $dayTransactions->where('resource_id', $resourceId);
-            $resource = $resourceTransactions->first()->resource;
+            $resource = $allProjectTransactions->where('resource_id', $resourceId)->first()->resource;
             
             $openingBalance = $openingBalances->get($resourceId, 0);
+            
+            // Only include resources that have stock at start of day or activity during day
+            if ($openingBalance == 0 && $resourceTransactions->isEmpty()) {
+                continue;
+            }
+            
             $purchases = $resourceTransactions->where('transaction_type', 'PURCHASE')->sum('quantity');
             $allocations = $resourceTransactions->where('transaction_type', 'ALLOCATION_IN')->sum('quantity');
             $transfersIn = $resourceTransactions->where('transaction_type', 'TRANSFER_IN')->sum('quantity');
@@ -63,6 +89,18 @@ class DailyConsumptionExport implements FromCollection, WithHeadings, WithMappin
             $totalIn = $purchases + $allocations + $transfersIn;
             $totalOut = $consumption + $transfersOut + $allocationsOut;
             $closingBalance = $openingBalance + $totalIn - $totalOut;
+
+            // Add to summary
+            $summaryOpeningBalance += $openingBalance;
+            $summaryPurchases += $purchases;
+            $summaryAllocationsIn += $allocations;
+            $summaryTransfersIn += $transfersIn;
+            $summaryTotalIn += $totalIn;
+            $summaryConsumption += $consumption;
+            $summaryTransfersOut += $transfersOut;
+            $summaryAllocationsOut += $allocationsOut;
+            $summaryTotalOut += $totalOut;
+            $summaryClosingBalance += $closingBalance;
 
             $result->push((object)[
                 'resource_name' => $resource->name,
@@ -79,6 +117,28 @@ class DailyConsumptionExport implements FromCollection, WithHeadings, WithMappin
                 'allocations_out' => $allocationsOut,
                 'total_out' => $totalOut,
                 'closing_balance' => $closingBalance,
+                'is_summary' => false,
+            ]);
+        }
+
+        // Add summary row
+        if ($result->isNotEmpty()) {
+            $result->push((object)[
+                'resource_name' => 'TOTAL SUMMARY',
+                'sku' => '',
+                'category' => '',
+                'unit' => '',
+                'opening_balance' => $summaryOpeningBalance,
+                'purchases' => $summaryPurchases,
+                'allocations_in' => $summaryAllocationsIn,
+                'transfers_in' => $summaryTransfersIn,
+                'total_in' => $summaryTotalIn,
+                'consumption' => $summaryConsumption,
+                'transfers_out' => $summaryTransfersOut,
+                'allocations_out' => $summaryAllocationsOut,
+                'total_out' => $summaryTotalOut,
+                'closing_balance' => $summaryClosingBalance,
+                'is_summary' => true,
             ]);
         }
 
@@ -127,8 +187,19 @@ class DailyConsumptionExport implements FromCollection, WithHeadings, WithMappin
 
     public function styles(Worksheet $sheet): array
     {
+        $lastRow = $sheet->getHighestRow();
+        
         return [
+            // Header row bold
             1 => ['font' => ['bold' => true]],
+            // Summary row bold with background
+            $lastRow => [
+                'font' => ['bold' => true, 'size' => 12],
+                'fill' => [
+                    'fillType' => Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => 'E8F5E9']
+                ]
+            ],
         ];
     }
 

@@ -234,6 +234,19 @@ class StockCalculator
     }
 
     /**
+     * Get current stock of a resource at the Hub (Central warehouse)
+     *
+     * @param int $resourceId
+     * @return float
+     */
+    public static function getHubStock(int $resourceId): float
+    {
+        return (float) InventoryTransaction::where('resource_id', $resourceId)
+            ->whereNull('project_id')
+            ->sum('quantity');
+    }
+
+    /**
      * Get all resources with their current stock at a specific project
      *
      * @param int $projectId

@@ -11,6 +11,7 @@ use Maatwebsite\Excel\Concerns\WithMapping;
 use Maatwebsite\Excel\Concerns\WithStyles;
 use Maatwebsite\Excel\Concerns\WithTitle;
 use PhpOffice\PhpSpreadsheet\Worksheet\Worksheet;
+use PhpOffice\PhpSpreadsheet\Style\Fill;
 
 class ProjectResourceUsageExport implements FromCollection, WithHeadings, WithMapping, WithStyles, WithTitle
 {
@@ -40,7 +41,28 @@ class ProjectResourceUsageExport implements FromCollection, WithHeadings, WithMa
             $query->whereDate('transaction_date', '<=', $this->dateTo);
         }
 
-        return $query->get();
+        $transactions = $query->get();
+        
+        // Add summary row
+        if ($transactions->isNotEmpty()) {
+            $totalQuantity = $transactions->sum('quantity');
+            $totalValue = $transactions->sum('total_value');
+            
+            $transactions->push((object)[
+                'transaction_date' => '',
+                'transaction_type' => 'SUMMARY',
+                'resource' => (object)['name' => 'TOTAL', 'sku' => '', 'category' => '', 'base_unit' => ''],
+                'quantity' => $totalQuantity,
+                'unit_price' => '',
+                'total_value' => $totalValue,
+                'metadata' => '',
+                'createdBy' => null,
+                'created_at' => null,
+                'is_summary' => true,
+            ]);
+        }
+        
+        return $transactions;
     }
 
     public function headings(): array
@@ -53,8 +75,8 @@ class ProjectResourceUsageExport implements FromCollection, WithHeadings, WithMa
             'Category',
             'Quantity',
             'Unit',
-            'Unit Price',
-            'Total Value',
+            'Unit Price (AED)',
+            'Total Value (AED)',
             'Metadata',
             'Recorded By',
             'Time',
@@ -64,25 +86,34 @@ class ProjectResourceUsageExport implements FromCollection, WithHeadings, WithMa
     public function map($transaction): array
     {
         return [
-            $transaction->transaction_date,
-            $transaction->type,
-            $transaction->resource->name,
-            $transaction->resource->sku,
-            $transaction->resource->category,
-            $transaction->quantity,
-            $transaction->resource->base_unit,
-            $transaction->unit_price,
-            $transaction->total_value,
-            $transaction->metadata,
-            $transaction->createdBy?->name ?? 'System',
-            $transaction->created_at->format('H:i:s'),
+            $transaction->transaction_date ?: '',
+            $transaction->transaction_type ?? '',
+            $transaction->resource->name ?? '',
+            $transaction->resource->sku ?? '',
+            $transaction->resource->category ?? '',
+            number_format($transaction->quantity, 2),
+            $transaction->resource->base_unit ?? '',
+            $transaction->unit_price ? number_format($transaction->unit_price, 2) : '',
+            number_format($transaction->total_value, 2),
+            $transaction->metadata ?? '',
+            $transaction->createdBy?->name ?? '',
+            $transaction->created_at ? $transaction->created_at->format('H:i:s') : '',
         ];
     }
 
     public function styles(Worksheet $sheet): array
     {
+        $lastRow = $sheet->getHighestRow();
+        
         return [
             1 => ['font' => ['bold' => true]],
+            $lastRow => [
+                'font' => ['bold' => true, 'size' => 12],
+                'fill' => [
+                    'fillType' => Fill::FILL_SOLID,
+                    'startColor' => ['rgb' => 'E3F2FD']
+                ]
+            ],
         ];
     }
 
