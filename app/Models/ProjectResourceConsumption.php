@@ -28,44 +28,67 @@ class ProjectResourceConsumption extends Model
 
     protected static function booted(): void
     {
-        // When creating a consumption, validate and update project resource pivot
+        // When creating a consumption, validate project has the resource
         static::creating(function (ProjectResourceConsumption $consumption) {
             $project = $consumption->project;
             $resource = $consumption->resource;
             
-            // Get current project allocation
-            $pivot = $project->resources()->where('resource_id', $resource->id)->first();
+            // Check project has sufficient quantity (from its own batches)
+            $projectQuantity = $project->getResourceQuantity($resource);
             
-            if (!$pivot) {
-                throw new InvalidArgumentException("Resource not allocated to this project");
-            }
-            
-            if ($pivot->pivot->quantity_available < $consumption->quantity_consumed) {
+            if ($projectQuantity < $consumption->quantity_consumed) {
                 throw new InvalidArgumentException(
-                    "Insufficient quantity at project. Available: {$pivot->pivot->quantity_available}, Requested: {$consumption->quantity_consumed}"
+                    "Insufficient quantity in Project inventory. Available: {$projectQuantity}, Requested: {$consumption->quantity_consumed}"
                 );
             }
             
             // Set opening/closing balances
-            $consumption->opening_balance = $pivot->pivot->quantity_available;
-            $consumption->closing_balance = $pivot->pivot->quantity_available - $consumption->quantity_consumed;
+            $consumption->opening_balance = $projectQuantity;
+            $consumption->closing_balance = $projectQuantity - $consumption->quantity_consumed;
         });
         
-        // After creating consumption, consume from batches (FIFO) and update project pivot
+        // After creating consumption, consume from PROJECT's own batches using FIFO
         static::created(function (ProjectResourceConsumption $consumption) {
             $project = $consumption->project;
             $resource = $consumption->resource;
             
-            // Consume from warehouse batches using FIFO
-            // This updates batch quantities and syncs resource.available_quantity
-            $resource->consumeQuantityFifo($consumption->quantity_consumed);
+            // Get PROJECT's batches for this resource (not Central Hub batches)
+            $projectBatches = $resource->batches()
+                ->forProject($project->id)
+                ->orderBy('purchase_date')
+                ->orderBy('id')
+                ->get();
             
-            $pivot = $project->resources()->where('resource_id', $resource->id)->first();
+            $remainingToConsume = $consumption->quantity_consumed;
             
-            $project->resources()->updateExistingPivot($resource->id, [
-                'quantity_consumed' => $pivot->pivot->quantity_consumed + $consumption->quantity_consumed,
-                'quantity_available' => $pivot->pivot->quantity_available - $consumption->quantity_consumed,
-            ]);
+            foreach ($projectBatches as $batch) {
+                if ($remainingToConsume <= 0) {
+                    break;
+                }
+
+                // Convert batch quantity to base unit for comparison
+                $batchAvailableInBaseUnit = $batch->quantity_remaining * $batch->conversion_factor;
+                
+                if ($batchAvailableInBaseUnit <= 0) {
+                    continue;
+                }
+
+                // Calculate how much to consume from this batch (in base unit)
+                $consumeFromBatch = min($remainingToConsume, $batchAvailableInBaseUnit);
+                
+                // Convert back to batch's unit for updating the batch
+                $consumeInBatchUnit = $consumeFromBatch / $batch->conversion_factor;
+                
+                // Update batch quantity
+                $batch->quantity_remaining -= $consumeInBatchUnit;
+                $batch->save();
+                
+                $remainingToConsume -= $consumeFromBatch;
+            }
+            
+            // Note: We don't sync resource.available_quantity here because
+            // project batches are separate from central hub batches
+            // Central hub quantity remains unchanged
         });
     }
 

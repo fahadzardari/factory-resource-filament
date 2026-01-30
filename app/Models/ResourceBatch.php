@@ -13,6 +13,7 @@ class ResourceBatch extends Model
     use LogsActivity;
     protected $fillable = [
         'resource_id',
+        'project_id', // NULL = Central Hub, NOT NULL = Belongs to project
         'batch_number',
         'unit_type',
         'conversion_factor',
@@ -97,6 +98,19 @@ class ResourceBatch extends Model
             }
         });
 
+        // Prevent editing of critical fields after creation
+        static::updating(function ($model) {
+            $criticalFields = ['quantity_purchased', 'unit_type', 'purchase_price', 'purchase_date'];
+            
+            foreach ($criticalFields as $field) {
+                if ($model->isDirty($field)) {
+                    throw new \RuntimeException(
+                        "Cannot modify '{$field}' after batch creation. Please delete this batch and create a new one."
+                    );
+                }
+            }
+        });
+
         // After creating or updating a batch, sync the parent resource quantity
         static::saved(function ($model) {
             if ($model->resource) {
@@ -114,6 +128,55 @@ class ResourceBatch extends Model
     public function resource(): BelongsTo
     {
         return $this->belongsTo(Resource::class);
+    }
+    
+    public function project(): BelongsTo
+    {
+        return $this->belongsTo(Project::class);
+    }
+    
+    /**
+     * Scope to get only Central Hub batches (not transferred to projects)
+     */
+    public function scopeCentralHub($query)
+    {
+        return $query->whereNull('project_id');
+    }
+    
+    /**
+     * Scope to get batches belonging to a specific project
+     */
+    public function scopeForProject($query, $projectId)
+    {
+        return $query->where('project_id', $projectId);
+    }
+    
+    /**
+     * Check if this batch is in Central Hub
+     */
+    public function isInCentralHub(): bool
+    {
+        return is_null($this->project_id);
+    }
+    
+    /**
+     * Check if this batch belongs to a project
+     */
+    public function isInProject(): bool
+    {
+        return !is_null($this->project_id);
+    }
+    
+    /**
+     * Get the location name (Central Hub or Project Name)
+     */
+    public function getLocationAttribute(): string
+    {
+        if ($this->isInCentralHub()) {
+            return '🏢 Central Hub';
+        }
+        
+        return '🏭 ' . ($this->project->name ?? 'Unknown Project');
     }
     
     /**

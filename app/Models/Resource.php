@@ -119,15 +119,18 @@ class Resource extends Model
     }
 
     /**
-     * Synchronize available_quantity with actual batch quantities
+     * Synchronize available_quantity with CENTRAL HUB batch quantities ONLY
      * This ensures the single source of truth
      * Applies conversion factors to convert all batches to the resource's base unit
+     * 
+     * IMPORTANT: Only counts batches in Central Hub (project_id = NULL)
+     * Batches transferred to projects are NOT counted here
      */
     public function syncQuantityFromBatches(): self
     {
-        // We must get() the batches and sum with conversion factor
-        // Cannot use sum() on query builder because it doesn't apply conversion_factor
+        // Only sum batches in Central Hub (not transferred to projects)
         $this->available_quantity = $this->batches()
+            ->centralHub() // Only batches with project_id = NULL
             ->get()
             ->sum(fn($batch) => $batch->quantity_remaining * $batch->conversion_factor);
         
@@ -136,11 +139,19 @@ class Resource extends Model
     }
 
     /**
-     * Check if the resource has sufficient quantity available
+     * Check if the Central Hub has sufficient quantity available for transfer
      */
     public function hasSufficientQuantity(float $requiredQuantity): bool
     {
         return $this->available_quantity >= $requiredQuantity;
+    }
+    
+    /**
+     * Get total quantity in Central Hub (same as available_quantity but more semantic)
+     */
+    public function getCentralHubQuantityAttribute(): float
+    {
+        return $this->available_quantity;
     }
 
     /**
@@ -192,42 +203,105 @@ class Resource extends Model
     }
 
     /**
-     * Get total quantity allocated to projects
+     * TRANSFER resources from Central Hub to a Project
+     * 
+     * This is a PHYSICAL MOVE - inventory is REMOVED from Central Hub and CREATED in Project
+     * NOT a copy - follows single source of truth principle
+     * 
+     * Process:
+     * 1. Validate sufficient quantity in Central Hub
+     * 2. Consume from Central Hub batches (FIFO) - reduces central hub inventory
+     * 3. Create new batch(es) in the project with same cost basis
+     * 4. Record transfer transaction
+     * 
+     * @param Project $project The destination project
+     * @param float $quantity Quantity to transfer (in resource's base unit)
+     * @param string|null $notes Optional transfer notes
+     * @throws InvalidArgumentException if insufficient quantity
      */
-    public function allocatedQuantity(): float
-    {
-        return (float) $this->projects()->sum('quantity_allocated');
-    }
-
-    /**
-     * Get quantity available for allocation (not yet assigned to projects)
-     */
-    public function availableForAllocation(): float
-    {
-        return max(0, $this->available_quantity - $this->allocatedQuantity());
-    }
-
-    /**
-     * Allocate resources to a project
-     * This TRANSFERS inventory from warehouse to project without consuming from batches yet
-     * Batches are only consumed when the project actually uses the resources
-     */
-    public function allocateToProject(Project $project, float $quantity, ?string $notes = null): void
+    public function transferToProject(Project $project, float $quantity, ?string $notes = null): void
     {
         if ($quantity <= 0) {
-            throw new InvalidArgumentException("Allocation quantity must be positive");
+            throw new InvalidArgumentException("Transfer quantity must be positive");
         }
 
-        if ($this->availableForAllocation() < $quantity) {
+        // Refresh to get latest central hub data
+        $this->refresh();
+        
+        if ($this->central_hub_quantity < $quantity) {
             throw new InvalidArgumentException(
-                "Insufficient quantity for allocation. Available: {$this->availableForAllocation()}, Requested: {$quantity}"
+                "Insufficient quantity in Central Hub. Available: {$this->central_hub_quantity}, Requested: {$quantity}"
             );
         }
 
-        // Create transfer record (from warehouse to project)
+        // Step 1: Consume from Central Hub batches using FIFO
+        // This REDUCES central hub inventory and tracks the cost
+        $batches = $this->batches()
+            ->centralHub() // Only central hub batches
+            ->orderBy('purchase_date')
+            ->orderBy('id')
+            ->get();
+
+        $remainingToTransfer = $quantity;
+        $transferredBatches = []; // Track what we're transferring
+        
+        foreach ($batches as $batch) {
+            if ($remainingToTransfer <= 0) {
+                break;
+            }
+
+            // Convert batch quantity to base unit for comparison
+            $batchAvailableInBaseUnit = $batch->quantity_remaining * $batch->conversion_factor;
+            
+            if ($batchAvailableInBaseUnit <= 0) {
+                continue;
+            }
+
+            // Calculate how much to take from this batch (in base unit)
+            $takeFromBatch = min($remainingToTransfer, $batchAvailableInBaseUnit);
+            
+            // Convert back to batch's unit for updating the batch
+            $takeInBatchUnit = $takeFromBatch / $batch->conversion_factor;
+            
+            // Record what we're transferring
+            $transferredBatches[] = [
+                'unit_type' => $batch->unit_type,
+                'conversion_factor' => $batch->conversion_factor,
+                'purchase_price' => $batch->purchase_price,
+                'quantity_in_batch_unit' => $takeInBatchUnit,
+                'quantity_in_base_unit' => $takeFromBatch,
+                'purchase_date' => $batch->purchase_date,
+                'supplier' => $batch->supplier,
+            ];
+            
+            // Reduce central hub batch
+            $batch->quantity_remaining -= $takeInBatchUnit;
+            $batch->save();
+            
+            $remainingToTransfer -= $takeFromBatch;
+        }
+
+        // Step 2: Create corresponding batches in the project
+        foreach ($transferredBatches as $transferData) {
+            ResourceBatch::create([
+                'resource_id' => $this->id,
+                'project_id' => $project->id, // This marks it as belonging to the project
+                'batch_number' => 'PROJ-' . $project->code . '-' . now()->format('YmdHis') . '-' . substr(md5(uniqid()), 0, 6),
+                'unit_type' => $transferData['unit_type'],
+                'conversion_factor' => $transferData['conversion_factor'],
+                'purchase_price' => $transferData['purchase_price'],
+                'quantity_purchased' => $transferData['quantity_in_batch_unit'],
+                'quantity_remaining' => $transferData['quantity_in_batch_unit'],
+                'purchase_date' => $transferData['purchase_date'],
+                'supplier' => $transferData['supplier'],
+                'notes' => "Transferred from Central Hub to {$project->name}",
+            ]);
+        }
+
+        // Step 3: Create transfer record for audit trail
         ResourceTransfer::create([
             'resource_id' => $this->id,
-            'from_project_id' => null, // From warehouse
+            'from_project_id' => null, // From Central Hub
             'to_project_id' => $project->id,
             'quantity' => $quantity,
             'transfer_type' => 'warehouse_to_project',
@@ -236,22 +310,118 @@ class Resource extends Model
             'transferred_at' => now(),
         ]);
 
-        // Update or create pivot record
-        $existing = $project->resources()->where('resource_id', $this->id)->first();
+        // Sync quantities (central hub will be reduced automatically)
+        $this->syncQuantityFromBatches();
+    }
+
+    /**
+     * RETURN unused resources from Project back to Central Hub
+     * 
+     * Used when a project ends or has excess inventory to return
+     * 
+     * Process:
+     * 1. Validate project has sufficient quantity
+     * 2. Move batches from project back to Central Hub
+     * 3. Record return transaction
+     * 
+     * @param Project $project The source project
+     * @param float $quantity Quantity to return (in resource's base unit)
+     * @param string|null $notes Optional return notes
+     * @throws InvalidArgumentException if insufficient quantity in project
+     */
+    public function returnToHub(Project $project, float $quantity, ?string $notes = null): void
+    {
+        if ($quantity <= 0) {
+            throw new InvalidArgumentException("Return quantity must be positive");
+        }
+
+        // Get project's batches for this resource
+        $projectBatches = $this->batches()
+            ->forProject($project->id)
+            ->orderBy('purchase_date')
+            ->orderBy('id')
+            ->get();
+            
+        // Calculate available quantity in project
+        $projectQuantity = $projectBatches->sum(fn($batch) => $batch->quantity_remaining * $batch->conversion_factor);
         
-        if ($existing) {
-            $project->resources()->updateExistingPivot($this->id, [
-                'quantity_allocated' => $existing->pivot->quantity_allocated + $quantity,
-                'quantity_available' => $existing->pivot->quantity_available + $quantity,
-            ]);
-        } else {
-            $project->resources()->attach($this->id, [
-                'quantity_allocated' => $quantity,
-                'quantity_consumed' => 0,
-                'quantity_available' => $quantity,
-                'notes' => $notes,
+        if ($projectQuantity < $quantity) {
+            throw new InvalidArgumentException(
+                "Insufficient quantity in Project. Available: {$projectQuantity}, Requested: {$quantity}"
+            );
+        }
+
+        $remainingToReturn = $quantity;
+        $returnedBatches = [];
+        
+        // Process batches FIFO
+        foreach ($projectBatches as $batch) {
+            if ($remainingToReturn <= 0) {
+                break;
+            }
+
+            $batchAvailableInBaseUnit = $batch->quantity_remaining * $batch->conversion_factor;
+            
+            if ($batchAvailableInBaseUnit <= 0) {
+                continue;
+            }
+
+            $takeFromBatch = min($remainingToReturn, $batchAvailableInBaseUnit);
+            $takeInBatchUnit = $takeFromBatch / $batch->conversion_factor;
+            
+            $returnedBatches[] = [
+                'unit_type' => $batch->unit_type,
+                'conversion_factor' => $batch->conversion_factor,
+                'purchase_price' => $batch->purchase_price,
+                'quantity_in_batch_unit' => $takeInBatchUnit,
+                'quantity_in_base_unit' => $takeFromBatch,
+                'purchase_date' => $batch->purchase_date,
+                'supplier' => $batch->supplier,
+            ];
+            
+            // Reduce or delete project batch
+            if ($batch->quantity_remaining <= $takeInBatchUnit + 0.001) {
+                // Entire batch is being returned
+                $batch->delete();
+            } else {
+                $batch->quantity_remaining -= $takeInBatchUnit;
+                $batch->save();
+            }
+            
+            $remainingToReturn -= $takeFromBatch;
+        }
+
+        // Create corresponding batches in Central Hub
+        foreach ($returnedBatches as $returnData) {
+            ResourceBatch::create([
+                'resource_id' => $this->id,
+                'project_id' => null, // NULL = Central Hub
+                'batch_number' => 'RETURN-' . $project->code . '-' . now()->format('YmdHis') . '-' . substr(md5(uniqid()), 0, 6),
+                'unit_type' => $returnData['unit_type'],
+                'conversion_factor' => $returnData['conversion_factor'],
+                'purchase_price' => $returnData['purchase_price'],
+                'quantity_purchased' => $returnData['quantity_in_batch_unit'],
+                'quantity_remaining' => $returnData['quantity_in_batch_unit'],
+                'purchase_date' => $returnData['purchase_date'],
+                'supplier' => $returnData['supplier'],
+                'notes' => "Returned from {$project->name} to Central Hub",
             ]);
         }
+
+        // Create transfer record
+        ResourceTransfer::create([
+            'resource_id' => $this->id,
+            'from_project_id' => $project->id,
+            'to_project_id' => null, // To Central Hub
+            'quantity' => $quantity,
+            'transfer_type' => 'project_to_warehouse',
+            'notes' => $notes,
+            'transferred_by' => auth()->id(),
+            'transferred_at' => now(),
+        ]);
+
+        // Sync quantities
+        $this->syncQuantityFromBatches();
     }
 
     /**

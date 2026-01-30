@@ -389,18 +389,15 @@ class BatchesRelationManager extends RelationManager
                 Tables\Actions\ViewAction::make()
                     ->modalHeading(fn ($record) => "📦 Batch: {$record->batch_number}")
                     ->modalWidth('5xl'),
-                Tables\Actions\EditAction::make()
-                    ->modalHeading(fn ($record) => "✏️ Edit: {$record->batch_number}")
-                    ->modalDescription('⚠️ Be careful when editing. This changes inventory levels.')
-                    ->modalWidth('6xl')
-                    ->successNotificationTitle('Batch Updated'),
+                // Edit action removed - batches are immutable after creation
+                // Users must delete and create a new batch if corrections are needed
                 Tables\Actions\DeleteAction::make()
                     ->requiresConfirmation()
                     ->modalHeading('Delete Purchase Batch')
                     ->modalDescription(fn ($record) => 
                         $record->quantity_used > 0 
                             ? "❌ Cannot delete: {$record->quantity_used} units have already been consumed from this batch." 
-                            : "Are you sure you want to delete this batch? This will remove {$record->quantity_remaining} units from inventory."
+                            : "⚠️ Are you sure? This will remove {$record->quantity_remaining} units from inventory.\n\n💡 If you made a mistake, delete this batch and create a new one with the correct information."
                     )
                     ->disabled(fn ($record) => $record->quantity_used > 0)
                     ->tooltip(fn ($record) => 

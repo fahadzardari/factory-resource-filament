@@ -30,6 +30,11 @@ class Project extends Model
             ->withPivot(['quantity_allocated', 'quantity_consumed', 'quantity_available', 'notes'])
             ->withTimestamps();
     }
+    
+    public function batches(): HasMany
+    {
+        return $this->hasMany(ResourceBatch::class);
+    }
 
     public function consumptions(): HasMany
     {
@@ -41,5 +46,25 @@ class Project extends Model
     {
         return $this->hasMany(ProjectResourceConsumption::class)
             ->whereDate('consumption_date', today());
+    }
+    
+    /**
+     * Get total inventory quantity for a specific resource in this project
+     * Returns quantity in the resource's base unit
+     */
+    public function getResourceQuantity(Resource $resource): float
+    {
+        return $this->batches()
+            ->where('resource_id', $resource->id)
+            ->get()
+            ->sum(fn($batch) => $batch->quantity_remaining * $batch->conversion_factor);
+    }
+    
+    /**
+     * Check if project has sufficient quantity of a resource
+     */
+    public function hasResourceQuantity(Resource $resource, float $quantity): bool
+    {
+        return $this->getResourceQuantity($resource) >= $quantity;
     }
 }
