@@ -234,16 +234,16 @@ class Resource extends Model
             );
         }
 
-        // Step 1: Consume from Central Hub batches using FIFO
-        // This REDUCES central hub inventory and tracks the cost
+        // Step 1: MOVE batches from Central Hub to Project using FIFO
+        // This physically relocates batches by updating project_id
         $batches = $this->batches()
             ->centralHub() // Only central hub batches
+            ->where('quantity_remaining', '>', 0)
             ->orderBy('purchase_date')
             ->orderBy('id')
             ->get();
 
         $remainingToTransfer = $quantity;
-        $transferredBatches = []; // Track what we're transferring
         
         foreach ($batches as $batch) {
             if ($remainingToTransfer <= 0) {
@@ -260,42 +260,37 @@ class Resource extends Model
             // Calculate how much to take from this batch (in base unit)
             $takeFromBatch = min($remainingToTransfer, $batchAvailableInBaseUnit);
             
-            // Convert back to batch's unit for updating the batch
+            // Convert back to batch's unit
             $takeInBatchUnit = $takeFromBatch / $batch->conversion_factor;
             
-            // Record what we're transferring
-            $transferredBatches[] = [
-                'unit_type' => $batch->unit_type,
-                'conversion_factor' => $batch->conversion_factor,
-                'purchase_price' => $batch->purchase_price,
-                'quantity_in_batch_unit' => $takeInBatchUnit,
-                'quantity_in_base_unit' => $takeFromBatch,
-                'purchase_date' => $batch->purchase_date,
-                'supplier' => $batch->supplier,
-            ];
-            
-            // Reduce central hub batch
-            $batch->quantity_remaining -= $takeInBatchUnit;
-            $batch->save();
+            if ($takeFromBatch >= $batchAvailableInBaseUnit) {
+                // MOVE entire batch to project
+                $batch->project_id = $project->id;
+                $batch->notes = ($batch->notes ? $batch->notes . "\n" : '') . "Transferred to {$project->name} on " . now()->format('Y-m-d');
+                $batch->save();
+            } else {
+                // SPLIT batch: Keep partial in hub, move rest to project
+                // Reduce hub batch
+                $batch->quantity_remaining -= $takeInBatchUnit;
+                $batch->save();
+                
+                // Create project batch with the transferred portion
+                ResourceBatch::create([
+                    'resource_id' => $this->id,
+                    'project_id' => $project->id,
+                    'batch_number' => $batch->batch_number . '-P' . $project->id,
+                    'unit_type' => $batch->unit_type,
+                    'conversion_factor' => $batch->conversion_factor,
+                    'purchase_price' => $batch->purchase_price,
+                    'quantity_purchased' => $takeInBatchUnit,
+                    'quantity_remaining' => $takeInBatchUnit,
+                    'purchase_date' => $batch->purchase_date,
+                    'supplier' => $batch->supplier,
+                    'notes' => "Split from {$batch->batch_number}, transferred to {$project->name}",
+                ]);
+            }
             
             $remainingToTransfer -= $takeFromBatch;
-        }
-
-        // Step 2: Create corresponding batches in the project
-        foreach ($transferredBatches as $transferData) {
-            ResourceBatch::create([
-                'resource_id' => $this->id,
-                'project_id' => $project->id, // This marks it as belonging to the project
-                'batch_number' => 'PROJ-' . $project->code . '-' . now()->format('YmdHis') . '-' . substr(md5(uniqid()), 0, 6),
-                'unit_type' => $transferData['unit_type'],
-                'conversion_factor' => $transferData['conversion_factor'],
-                'purchase_price' => $transferData['purchase_price'],
-                'quantity_purchased' => $transferData['quantity_in_batch_unit'],
-                'quantity_remaining' => $transferData['quantity_in_batch_unit'],
-                'purchase_date' => $transferData['purchase_date'],
-                'supplier' => $transferData['supplier'],
-                'notes' => "Transferred from Central Hub to {$project->name}",
-            ]);
         }
 
         // Step 3: Create transfer record for audit trail
@@ -354,7 +349,7 @@ class Resource extends Model
         $remainingToReturn = $quantity;
         $returnedBatches = [];
         
-        // Process batches FIFO
+        // Process batches FIFO - MOVE them back to hub
         foreach ($projectBatches as $batch) {
             if ($remainingToReturn <= 0) {
                 break;
@@ -369,43 +364,33 @@ class Resource extends Model
             $takeFromBatch = min($remainingToReturn, $batchAvailableInBaseUnit);
             $takeInBatchUnit = $takeFromBatch / $batch->conversion_factor;
             
-            $returnedBatches[] = [
-                'unit_type' => $batch->unit_type,
-                'conversion_factor' => $batch->conversion_factor,
-                'purchase_price' => $batch->purchase_price,
-                'quantity_in_batch_unit' => $takeInBatchUnit,
-                'quantity_in_base_unit' => $takeFromBatch,
-                'purchase_date' => $batch->purchase_date,
-                'supplier' => $batch->supplier,
-            ];
-            
-            // Reduce or delete project batch
-            if ($batch->quantity_remaining <= $takeInBatchUnit + 0.001) {
-                // Entire batch is being returned
-                $batch->delete();
+            if ($takeFromBatch >= $batchAvailableInBaseUnit - 0.001) {
+                // MOVE entire batch back to hub
+                $batch->project_id = null; // NULL = Central Hub
+                $batch->notes = ($batch->notes ? $batch->notes . "\n" : '') . "Returned to Central Hub from {$project->name} on " . now()->format('Y-m-d');
+                $batch->save();
             } else {
+                // SPLIT: Keep partial in project, move rest to hub
                 $batch->quantity_remaining -= $takeInBatchUnit;
                 $batch->save();
+                
+                // Create hub batch with returned portion
+                ResourceBatch::create([
+                    'resource_id' => $this->id,
+                    'project_id' => null,
+                    'batch_number' => $batch->batch_number . '-RET',
+                    'unit_type' => $batch->unit_type,
+                    'conversion_factor' => $batch->conversion_factor,
+                    'purchase_price' => $batch->purchase_price,
+                    'quantity_purchased' => $takeInBatchUnit,
+                    'quantity_remaining' => $takeInBatchUnit,
+                    'purchase_date' => $batch->purchase_date,
+                    'supplier' => $batch->supplier,
+                    'notes' => "Split from {$batch->batch_number}, returned from {$project->name}",
+                ]);
             }
             
             $remainingToReturn -= $takeFromBatch;
-        }
-
-        // Create corresponding batches in Central Hub
-        foreach ($returnedBatches as $returnData) {
-            ResourceBatch::create([
-                'resource_id' => $this->id,
-                'project_id' => null, // NULL = Central Hub
-                'batch_number' => 'RETURN-' . $project->code . '-' . now()->format('YmdHis') . '-' . substr(md5(uniqid()), 0, 6),
-                'unit_type' => $returnData['unit_type'],
-                'conversion_factor' => $returnData['conversion_factor'],
-                'purchase_price' => $returnData['purchase_price'],
-                'quantity_purchased' => $returnData['quantity_in_batch_unit'],
-                'quantity_remaining' => $returnData['quantity_in_batch_unit'],
-                'purchase_date' => $returnData['purchase_date'],
-                'supplier' => $returnData['supplier'],
-                'notes' => "Returned from {$project->name} to Central Hub",
-            ]);
         }
 
         // Create transfer record
