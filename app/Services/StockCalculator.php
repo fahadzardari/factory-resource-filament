@@ -232,4 +232,37 @@ class StockCalculator
 
         return (float) $query->sum('quantity');
     }
+
+    /**
+     * Get all resources with their current stock at a specific project
+     *
+     * @param int $projectId
+     * @return array
+     */
+    public static function getProjectResourceStocks(int $projectId): array
+    {
+        $transactions = InventoryTransaction::where('project_id', $projectId)
+            ->with('resource')
+            ->get()
+            ->groupBy('resource_id');
+
+        $stocks = [];
+        foreach ($transactions as $resourceId => $resourceTransactions) {
+            $quantity = $resourceTransactions->sum('quantity');
+            
+            // Only include resources with positive stock
+            if ($quantity > 0) {
+                $resource = $resourceTransactions->first()->resource;
+                $stocks[] = [
+                    'resource_id' => $resourceId,
+                    'resource_name' => $resource->name,
+                    'sku' => $resource->sku,
+                    'quantity' => $quantity,
+                    'unit' => $resource->base_unit,
+                ];
+            }
+        }
+
+        return $stocks;
+    }
 }

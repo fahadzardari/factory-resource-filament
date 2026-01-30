@@ -6,6 +6,7 @@ use App\Models\InventoryTransaction;
 use App\Models\Resource;
 use App\Models\Project;
 use App\Models\User;
+use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\DB;
 use InvalidArgumentException;
 
@@ -53,7 +54,7 @@ class InventoryTransactionService
             'supplier' => $supplier,
             'invoice_number' => $invoiceNumber,
             'notes' => $notes,
-            'created_by' => $user?->id ?? auth()->id(),
+            'created_by' => $user?->id ?? Auth::id(),
         ]);
     }
 
@@ -112,7 +113,7 @@ class InventoryTransactionService
                 'total_value' => -($quantity * $weightedAvgPrice),
                 'transaction_date' => $transactionDate,
                 'notes' => $notes,
-                'created_by' => $user?->id ?? auth()->id(),
+                'created_by' => $user?->id ?? Auth::id(),
             ]);
 
             // IN to Project (positive quantity)
@@ -125,7 +126,7 @@ class InventoryTransactionService
                 'total_value' => $quantity * $weightedAvgPrice,
                 'transaction_date' => $transactionDate,
                 'notes' => $notes,
-                'created_by' => $user?->id ?? auth()->id(),
+                'created_by' => $user?->id ?? Auth::id(),
             ]);
 
             return [$outTransaction, $inTransaction];
@@ -182,17 +183,17 @@ class InventoryTransactionService
             'reference_type' => $referenceType,
             'reference_id' => $referenceId,
             'notes' => $notes,
-            'created_by' => $user?->id ?? auth()->id(),
+            'created_by' => $user?->id ?? Auth::id(),
         ]);
     }
 
     /**
-     * Transfer stock from one project to another
+     * Transfer stock from one project to another, or back to Hub
      * Creates two transactions: TRANSFER_OUT and TRANSFER_IN
      *
      * @param Resource $resource
      * @param Project $fromProject
-     * @param Project $toProject
+     * @param Project|null $toProject (null means transfer back to Hub)
      * @param float $quantity (in base unit)
      * @param string $transaction_date
      * @param string|null $notes
@@ -202,7 +203,7 @@ class InventoryTransactionService
     public function recordTransfer(
         Resource $resource,
         Project $fromProject,
-        Project $toProject,
+        ?Project $toProject,
         float $quantity,
         string $transactionDate,
         ?string $notes = null,
@@ -212,7 +213,7 @@ class InventoryTransactionService
             throw new InvalidArgumentException('Transfer quantity must be positive.');
         }
 
-        if ($fromProject->id === $toProject->id) {
+        if ($toProject && $fromProject->id === $toProject->id) {
             throw new InvalidArgumentException('Cannot transfer to the same project.');
         }
 
@@ -248,20 +249,20 @@ class InventoryTransactionService
                 'total_value' => -($quantity * $weightedAvgPrice),
                 'transaction_date' => $transactionDate,
                 'notes' => $notes,
-                'created_by' => $user?->id ?? auth()->id(),
+                'created_by' => $user?->id ?? Auth::id(),
             ]);
 
-            // IN to destination project
+            // IN to destination project (or Hub if toProject is null)
             $inTransaction = InventoryTransaction::create([
                 'resource_id' => $resource->id,
-                'project_id' => $toProject->id,
+                'project_id' => $toProject?->id, // null means Hub
                 'transaction_type' => InventoryTransaction::TYPE_TRANSFER_IN,
                 'quantity' => $quantity,
                 'unit_price' => $weightedAvgPrice,
                 'total_value' => $quantity * $weightedAvgPrice,
                 'transaction_date' => $transactionDate,
                 'notes' => $notes,
-                'created_by' => $user?->id ?? auth()->id(),
+                'created_by' => $user?->id ?? Auth::id(),
             ]);
 
             return [$outTransaction, $inTransaction];

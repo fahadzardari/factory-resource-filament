@@ -26,6 +26,11 @@ class Resource extends Model
         return $this->hasMany(InventoryTransaction::class);
     }
 
+    public function inventoryTransactions(): HasMany
+    {
+        return $this->hasMany(InventoryTransaction::class);
+    }
+
     /**
      * Get hub stock (current balance in central warehouse)
      */

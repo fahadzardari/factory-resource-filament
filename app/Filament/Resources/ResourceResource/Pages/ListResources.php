@@ -17,3 +17,4 @@ class ListResources extends ListRecords
         ];
     }
 }
+

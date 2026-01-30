@@ -33,15 +33,8 @@ class StatsOverviewWidget extends BaseWidget
             now()->endOfWeek()
         ])->count();
         
-        // Get low stock resources (hub stock < 100 units)
-        $lowStockCount = ResourceModel::whereHas('inventoryTransactions', function ($query) {
-            $query->whereNull('project_id');
-        })
-        ->get()
-        ->filter(function ($resource) {
-            return $resource->hub_stock < 100;
-        })
-        ->count();
+        // Total transaction count
+        $totalTransactions = InventoryTransaction::count();
         
         return [
             Stat::make('Hub Inventory Value', 'PKR ' . number_format($hubInventoryValue, 2))
@@ -60,16 +53,16 @@ class StatsOverviewWidget extends BaseWidget
                 ->color('warning'),
             
             Stat::make('Total Resources', $totalResources)
-                ->description($lowStockCount > 0 ? $lowStockCount . ' low stock items' : 'All items in stock')
+                ->description('Items in catalog')
                 ->descriptionIcon('heroicon-o-cube')
-                ->color($lowStockCount > 0 ? 'danger' : 'primary'),
+                ->color('primary'),
             
             Stat::make('Today\'s Transactions', $todayTransactions)
                 ->description($weekTransactions . ' this week')
                 ->descriptionIcon('heroicon-o-arrow-trending-up')
                 ->color('primary'),
             
-            Stat::make('Total Transactions', InventoryTransaction::count())
+            Stat::make('Total Transactions', $totalTransactions)
                 ->description('All time ledger entries')
                 ->descriptionIcon('heroicon-o-document-text')
                 ->color('gray'),

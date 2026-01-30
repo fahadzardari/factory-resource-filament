@@ -32,6 +32,11 @@ class Project extends Model
         return $this->hasMany(InventoryTransaction::class);
     }
 
+    public function inventoryTransactions(): HasMany
+    {
+        return $this->hasMany(InventoryTransaction::class);
+    }
+
     /**
      * Get stock of a specific resource at this project
      */
