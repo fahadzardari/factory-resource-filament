@@ -156,10 +156,18 @@ class ViewProject extends ViewRecord
                 ->label('Allocate Resource')
                 ->icon('heroicon-o-plus-circle')
                 ->color('success')
-                ->visible(fn () => $this->record->status === 'Active')
+                ->visible(fn () => strtolower($this->record->status) === 'active')
+                ->modalHeading('Allocate Resource from Hub to Project')
+                ->modalDescription('Move resources from the Central Hub warehouse to this project site. This will reduce Hub inventory and increase project inventory.')
+                ->modalIcon('heroicon-o-truck')
                 ->form([
+                    Forms\Components\Placeholder::make('info')
+                        ->content('📦 Select a resource from the Central Hub and specify how much you want to send to this project. Make sure you have enough stock at the Hub before allocating.')
+                        ->columnSpanFull(),
+                    
                     Forms\Components\Select::make('resource_id')
                         ->label('Resource')
+                        ->helperText('Choose which resource you want to allocate to this project')
                         ->options(function () {
                             return \App\Models\Resource::all()->pluck('name', 'id');
                         })
@@ -174,14 +182,14 @@ class ViewProject extends ViewRecord
                         }),
                     
                     Forms\Components\Placeholder::make('available_info')
-                        ->label('')
+                        ->label('Available Stock at Hub')
                         ->content(function ($get) {
                             if ($resourceId = $get('resource_id')) {
                                 $resource = \App\Models\Resource::find($resourceId);
                                 $stock = \App\Services\StockCalculator::getHubStock($resourceId);
-                                return "Available at Hub: {$stock} {$resource->base_unit}";
+                                return "✅ Available: {$stock} {$resource->base_unit}";
                             }
-                            return '';
+                            return '⏳ Select a resource first';
                         })
                         ->visible(fn ($get) => $get('resource_id')),
                     
@@ -189,15 +197,19 @@ class ViewProject extends ViewRecord
                         ->numeric()
                         ->required()
                         ->minValue(0.01)
-                        ->label('Quantity to Allocate'),
+                        ->label('Quantity to Allocate')
+                        ->helperText('Enter the amount you want to send to this project. Cannot exceed available Hub stock.'),
                     
                     Forms\Components\DatePicker::make('transaction_date')
                         ->label('Transaction Date')
+                        ->helperText('When did this allocation happen? Cannot be a future date.')
                         ->required()
                         ->default(today())
                         ->maxDate(today()),
                     
                     Forms\Components\Textarea::make('notes')
+                        ->label('Notes (Optional)')
+                        ->helperText('Add any additional information about this allocation')
                         ->rows(3),
                 ])
                 ->action(function (array $data) {
@@ -231,10 +243,18 @@ class ViewProject extends ViewRecord
                 ->label('Consume Resource')
                 ->icon('heroicon-o-minus-circle')
                 ->color('danger')
-                ->visible(fn () => $this->record->status === 'active')
+                ->visible(fn () => strtolower($this->record->status) === 'active')
+                ->modalHeading('Record Resource Consumption')
+                ->modalDescription('Track materials used in this project. This will reduce the project inventory and cannot be undone.')
+                ->modalIcon('heroicon-o-fire')
                 ->form([
+                    Forms\Components\Placeholder::make('info')
+                        ->content('🔥 Record materials consumed/used in this project. For example: cement used in construction, paint used for walls, etc. This permanently removes the resource from inventory.')
+                        ->columnSpanFull(),
+                    
                     Forms\Components\Select::make('resource_id')
-                        ->label('Resource')
+                        ->label('Resource to Consume')
+                        ->helperText('Select which material was used in the project')
                         ->options(function () {
                             $stocks = \App\Services\StockCalculator::getProjectResourceStocks($this->record->id);
                             return collect($stocks)->pluck('resource_name', 'resource_id');
@@ -247,22 +267,27 @@ class ViewProject extends ViewRecord
                         ->numeric()
                         ->required()
                         ->minValue(0.01)
+                        ->label('Quantity Consumed')
                         ->helperText(function ($get) {
                             if ($resourceId = $get('resource_id')) {
                                 $stocks = \App\Services\StockCalculator::getProjectResourceStocks($this->record->id);
                                 $stock = collect($stocks)->firstWhere('resource_id', $resourceId);
-                                return $stock ? "Available: {$stock['quantity']} {$stock['unit']}" : '';
+                                return $stock ? "⚠️ Available at project: {$stock['quantity']} {$stock['unit']} - Don't exceed this amount!" : '';
                             }
-                            return '';
+                            return 'Enter how much was used';
                         }),
                     
                     Forms\Components\DatePicker::make('transaction_date')
-                        ->label('Transaction Date')
+                        ->label('Consumption Date')
+                        ->helperText('When was this resource used? Cannot be a future date.')
                         ->required()
                         ->default(today())
                         ->maxDate(today()),
                     
                     Forms\Components\Textarea::make('notes')
+                        ->label('Usage Notes (Optional)')
+                        ->helperText('Describe what this resource was used for. E.g., "Used in foundation work" or "Applied to exterior walls"')
+                        ->placeholder('Example: Used 50kg cement for column casting on ground floor')
                         ->rows(3),
                 ])
                 ->action(function (array $data) {
@@ -299,10 +324,18 @@ class ViewProject extends ViewRecord
                 ->label('Transfer Resource')
                 ->icon('heroicon-o-arrow-right-circle')
                 ->color('warning')
-                ->visible(fn () => $this->record->status === 'Active')
+                ->visible(fn () => strtolower($this->record->status) === 'active')
+                ->modalHeading('Transfer Resource to Another Location')
+                ->modalDescription('Move resources from this project to another project or back to the Central Hub.')
+                ->modalIcon('heroicon-o-truck')
                 ->form([
+                    Forms\Components\Placeholder::make('info')
+                        ->content('🚚 Transfer resources to another location. Choose "Hub" to return materials to the central warehouse, or select another project to send materials there directly.')
+                        ->columnSpanFull(),
+                    
                     Forms\Components\Select::make('resource_id')
-                        ->label('Resource')
+                        ->label('Resource to Transfer')
+                        ->helperText('Which material do you want to move?')
                         ->options(function () {
                             $stocks = \App\Services\StockCalculator::getProjectResourceStocks($this->record->id);
                             return collect($stocks)->pluck('resource_name', 'resource_id');
@@ -311,61 +344,82 @@ class ViewProject extends ViewRecord
                         ->searchable()
                         ->reactive(),
                     
-                    Forms\Components\Select::make('to_project_id')
-                        ->label('To Project')
-                        ->options(Project::where('status', 'Active')->where('id', '!=', $this->record->id)->pluck('name', 'id'))
+                    Forms\Components\Select::make('destination')
+                        ->label('Transfer Destination')
+                        ->helperText('Where do you want to send this resource?')
+                        ->options(function () {
+                            $options = ['hub' => '🏢 Central Hub (Main Warehouse)'];
+                            $projects = Project::where('status', 'active')
+                                ->where('id', '!=', $this->record->id)
+                                ->get()
+                                ->mapWithKeys(fn ($p) => [$p->id => "🏗️ {$p->name} ({$p->code})"]);
+                            return $options + $projects->toArray();
+                        })
                         ->required()
-                        ->searchable(),
+                        ->searchable()
+                        ->reactive(),
                     
                     Forms\Components\TextInput::make('quantity')
                         ->numeric()
                         ->required()
                         ->minValue(0.01)
+                        ->label('Quantity to Transfer')
                         ->helperText(function ($get) {
                             if ($resourceId = $get('resource_id')) {
                                 $stocks = \App\Services\StockCalculator::getProjectResourceStocks($this->record->id);
                                 $stock = collect($stocks)->firstWhere('resource_id', $resourceId);
-                                return $stock ? "Available: {$stock['quantity']} {$stock['unit']}" : '';
+                                return $stock ? "⚠️ Available at this project: {$stock['quantity']} {$stock['unit']}" : '';
                             }
-                            return '';
+                            return 'Enter the amount to transfer';
                         }),
                     
                     Forms\Components\DatePicker::make('transaction_date')
-                        ->label('Transaction Date')
+                        ->label('Transfer Date')
+                        ->helperText('When did/will this transfer happen?')
                         ->required()
                         ->default(today())
                         ->maxDate(today()),
                     
                     Forms\Components\Textarea::make('notes')
+                        ->label('Transfer Notes (Optional)')
+                        ->helperText('Add reason for transfer or any other details')
+                        ->placeholder('Example: Excess materials no longer needed, or Materials needed urgently at other site')
                         ->rows(3),
                 ])
                 ->action(function (array $data) {
                     $service = app(InventoryTransactionService::class);
+                    $resource = ResourceModel::find($data['resource_id']);
+                    
+                    // Determine destination
+                    $toProject = null;
+                    $destinationName = 'Central Hub';
+                    
+                    if ($data['destination'] !== 'hub') {
+                        $toProject = Project::find($data['destination']);
+                        $destinationName = $toProject->name;
+                    }
                     
                     try {
                         $service->recordTransfer(
-                            ResourceModel::find($data['resource_id']),
+                            $resource,
                             $this->record,
-                            Project::find($data['to_project_id']),
+                            $toProject,
                             $data['quantity'],
                             \Carbon\Carbon::parse($data['transaction_date'])->format('Y-m-d'),
                             $data['notes'] ?? null
                         );
                         
-                        $resource = ResourceModel::find($data['resource_id']);
-                        $toProject = Project::find($data['to_project_id']);
-                        
                         Notification::make()
                             ->success()
-                            ->title('Transfer Successful')
-                            ->body("Transferred {$data['quantity']} {$resource->base_unit} of {$resource->name} to {$toProject->name}.")
+                            ->title('Transfer Successful! ✅')
+                            ->body("Transferred {$data['quantity']} {$resource->base_unit} of {$resource->name} to {$destinationName}.")
                             ->send();
                         
-                        redirect(request()->header('Referer'));
+                        $this->refreshFormData(['infolist']);
                     } catch (\Exception $e) {
                         Notification::make()
                             ->danger()
-                            ->title('Transfer Failed')
+                            ->title('Transfer Failed ❌')
                             ->body($e->getMessage())
                             ->send();
                     }
@@ -375,9 +429,16 @@ class ViewProject extends ViewRecord
                 ->label('Export Daily Consumption')
                 ->icon('heroicon-o-arrow-down-tray')
                 ->color('info')
+                ->modalHeading('📊 Export Daily Consumption Report')
+                ->modalDescription('Download a detailed report showing all resources at this project for a specific day, including opening balance, transactions, and closing balance.')
                 ->form([
+                    Forms\Components\Placeholder::make('info')
+                        ->content('📅 This report shows a snapshot of all materials at the project for one specific day. It includes opening stock, any materials added or used that day, and the closing stock.')
+                        ->columnSpanFull(),
+                    
                     Forms\Components\DatePicker::make('date')
-                        ->label('Date')
+                        ->label('Select Date')
+                        ->helperText('Choose which day you want to see the report for')
                         ->default(today())
                         ->required()
                         ->maxDate(today()),
@@ -395,14 +456,22 @@ class ViewProject extends ViewRecord
                 ->label('Export Resource Usage')
                 ->icon('heroicon-o-document-chart-bar')
                 ->color('success')
+                ->modalHeading('📈 Export Resource Usage Report')
+                ->modalDescription('Download a comprehensive report of all resource transactions within a date range.')
                 ->form([
+                    Forms\Components\Placeholder::make('info')
+                        ->content('📋 This report shows ALL transactions (allocations, consumption, transfers) for this project within your selected date range. Perfect for auditing and analysis.')
+                        ->columnSpanFull(),
+                    
                     Forms\Components\DatePicker::make('date_from')
                         ->label('From Date')
+                        ->helperText('Start of the period you want to analyze')
                         ->default(now()->subDays(30))
                         ->maxDate(today()),
                     
                     Forms\Components\DatePicker::make('date_to')
                         ->label('To Date')
+                        ->helperText('End of the period you want to analyze')
                         ->default(today())
                         ->maxDate(today()),
                 ])
@@ -423,48 +492,71 @@ class ViewProject extends ViewRecord
                 ->label('Complete Project')
                 ->icon('heroicon-o-check-circle')
                 ->color('success')
-                ->visible(fn () => $this->record->status === 'Active')
+                ->visible(fn () => strtolower($this->record->status) === 'active')
                 ->requiresConfirmation()
-                ->modalHeading('Complete Project')
-                ->modalDescription('What would you like to do with remaining resources at this project site?')
+                ->modalHeading('🎉 Complete This Project')
+                ->modalDescription('You are about to mark this project as completed. Please decide what to do with all remaining resources at this project site.')
+                ->modalIcon('heroicon-o-check-circle')
+                ->modalSubmitActionLabel('Complete Project & Process Resources')
                 ->form(function () {
                     $stocks = \App\Services\StockCalculator::getProjectResourceStocks($this->record->id);
                     
                     if (empty($stocks)) {
                         return [
                             Forms\Components\Placeholder::make('no_resources')
-                                ->content('No resources remaining at this project site. Project can be completed directly.'),
+                                ->content('✅ Great! No resources remaining at this project site. The project can be completed without any material transfers.')
+                                ->columnSpanFull(),
                         ];
                     }
 
-                    $formFields = [];
+                    $formFields = [
+                        Forms\Components\Placeholder::make('instructions')
+                            ->content('📦 You have resources remaining at this project. For EACH resource below, choose what to do with it:
+
+• **Return to Hub**: Send back to central warehouse for future use
+• **Transfer to Project**: Send directly to another active project  
+• **Keep at Project**: Leave it here (write-off, will not be tracked anymore)')
+                            ->columnSpanFull(),
+                    ];
+                    
                     foreach ($stocks as $stock) {
                         $formFields[] = Forms\Components\Section::make($stock['resource_name'] . ' (' . $stock['sku'] . ')')
-                            ->description('Available: ' . number_format($stock['quantity'], 2) . ' ' . $stock['unit'])
+                            ->description('📊 Current Stock: ' . number_format($stock['quantity'], 2) . ' ' . $stock['unit'] . ' available at this project')
                             ->schema([
                                 Forms\Components\Select::make('action_' . $stock['resource_id'])
-                                    ->label('Action')
+                                    ->label('What to do with this resource?')
+                                    ->helperText('Choose how to handle these materials')
                                     ->options([
-                                        'return_hub' => 'Return to Hub',
-                                        'transfer' => 'Transfer to Another Project',
-                                        'keep' => 'Keep at Project (Write-off)',
+                                        'return_hub' => '🏢 Return to Central Hub (Recommended)',
+                                        'transfer' => '🚚 Transfer to Another Project',
+                                        'keep' => '❌ Keep at Project (Write-off)',
                                     ])
                                     ->default('return_hub')
                                     ->required()
                                     ->reactive(),
                                 
                                 Forms\Components\Select::make('transfer_project_' . $stock['resource_id'])
-                                    ->label('Transfer to Project')
-                                    ->options(Project::where('status', 'Active')->where('id', '!=', $this->record->id)->pluck('name', 'id'))
+                                    ->label('Transfer to Which Project?')
+                                    ->helperText('Select the project that will receive these materials')
+                                    ->options(function () {
+                                        return Project::where('status', 'active')
+                                            ->where('id', '!=', $this->record->id)
+                                            ->get()
+                                            ->mapWithKeys(fn ($p) => [$p->id => "{$p->name} ({$p->code})"]);
+                                    })
                                     ->visible(fn ($get) => $get('action_' . $stock['resource_id']) === 'transfer')
-                                    ->required(fn ($get) => $get('action_' . $stock['resource_id']) === 'transfer'),
+                                    ->required(fn ($get) => $get('action_' . $stock['resource_id']) === 'transfer')
+                                    ->searchable(),
                                 
                                 Forms\Components\Textarea::make('notes_' . $stock['resource_id'])
-                                    ->label('Notes')
+                                    ->label('Notes (Optional)')
+                                    ->helperText('Add any remarks about this resource disposition')
+                                    ->placeholder('Example: Excess materials from project, Good condition for reuse')
                                     ->rows(2),
                             ])
                             ->columns(2)
-                            ->collapsible();
+                            ->collapsible()
+                            ->collapsed(false);
                     }
 
                     return $formFields;
@@ -476,21 +568,27 @@ class ViewProject extends ViewRecord
                     try {
                         DB::beginTransaction();
 
+                        $processedCount = 0;
+                        $returnedToHub = 0;
+                        $transferred = 0;
+                        $keptAtProject = 0;
+
                         foreach ($stocks as $stock) {
                             $resourceId = $stock['resource_id'];
                             $action = $data['action_' . $resourceId] ?? 'return_hub';
                             $notes = $data['notes_' . $resourceId] ?? 'Project completion';
 
                             if ($action === 'return_hub') {
-                                // Transfer back to hub (reverse allocation)
+                                // Transfer back to hub
                                 $service->recordTransfer(
                                     ResourceModel::find($resourceId),
                                     $this->record,
-                                    null, // null means hub
+                                    null, // null = Hub
                                     $stock['quantity'],
                                     today()->format('Y-m-d'),
-                                    $notes . ' - Returned to hub on project completion'
+                                    $notes . ' - Returned to Hub on project completion'
                                 );
+                                $returnedToHub++;
                             } elseif ($action === 'transfer') {
                                 $toProjectId = $data['transfer_project_' . $resourceId];
                                 $service->recordTransfer(
@@ -499,10 +597,14 @@ class ViewProject extends ViewRecord
                                     Project::find($toProjectId),
                                     $stock['quantity'],
                                     today()->format('Y-m-d'),
-                                    $notes . ' - Transferred on project completion'
+                                    $notes . ' - Transferred to another project on completion'
                                 );
+                                $transferred++;
+                            } else {
+                                // Keep at project (write-off)
+                                $keptAtProject++;
                             }
-                            // If 'keep', we don't create any transaction (write-off)
+                            $processedCount++;
                         }
 
                         // Update project status
@@ -513,10 +615,17 @@ class ViewProject extends ViewRecord
 
                         DB::commit();
 
+                        $summary = "Processed {$processedCount} resource(s): ";
+                        $details = [];
+                        if ($returnedToHub > 0) $details[] = "{$returnedToHub} returned to Hub";
+                        if ($transferred > 0) $details[] = "{$transferred} transferred to other projects";
+                        if ($keptAtProject > 0) $details[] = "{$keptAtProject} kept at project";
+                        
                         Notification::make()
                             ->success()
-                            ->title('Project Completed')
-                            ->body('All resources have been processed and project marked as completed.')
+                            ->title('🎉 Project Completed Successfully!')
+                            ->body($summary . implode(', ', $details) . '. Project status updated to Completed.')
+                            ->duration(8000)
                             ->send();
 
                         redirect(ProjectResource::getUrl('index'));
@@ -525,8 +634,8 @@ class ViewProject extends ViewRecord
                         
                         Notification::make()
                             ->danger()
-                            ->title('Completion Failed')
-                            ->body($e->getMessage())
+                            ->title('❌ Project Completion Failed')
+                            ->body('Error: ' . $e->getMessage() . '. No changes were made.')
                             ->send();
                     }
                 }),

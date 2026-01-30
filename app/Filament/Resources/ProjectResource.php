@@ -120,7 +120,7 @@ class ProjectResource extends Resource
                     ->label('Consume')
                     ->icon('heroicon-o-fire')
                     ->color('danger')
-                    ->visible(fn (Project $record) => $record->status === 'Active')
+                    ->visible(fn (Project $record) => strtolower($record->status) === 'active')
                     ->form([
                         Forms\Components\Select::make('resource_id')
                             ->label('Resource')
@@ -180,7 +180,7 @@ class ProjectResource extends Resource
                     ->label('Transfer')
                     ->icon('heroicon-o-arrow-path')
                     ->color('info')
-                    ->visible(fn (Project $record) => $record->status === 'Active')
+                    ->visible(fn (Project $record) => strtolower($record->status) === 'active')
                     ->form([
                         Forms\Components\Select::make('resource_id')
                             ->label('Resource')
