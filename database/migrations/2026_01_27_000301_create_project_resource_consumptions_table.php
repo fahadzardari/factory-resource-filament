@@ -23,8 +23,8 @@ return new class extends Migration
             $table->text('notes')->nullable();
             $table->timestamps();
             
-            // Ensure one consumption record per project/resource/date
-            $table->unique(['project_id', 'resource_id', 'consumption_date'], 'proj_res_cons_unique');
+            // Removed unique constraint - allow multiple consumption records per day
+            // $table->unique(['project_id', 'resource_id', 'consumption_date'], 'proj_res_cons_unique');
         });
     }
 

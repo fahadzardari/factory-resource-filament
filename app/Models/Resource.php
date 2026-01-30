@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -11,7 +12,7 @@ use Spatie\Activitylog\LogOptions;
 
 class Resource extends Model
 {
-    use LogsActivity;
+    use HasFactory, LogsActivity;
     protected $fillable = [
         'name',
         'sku',
@@ -188,6 +189,69 @@ class Resource extends Model
         $this->syncQuantityFromBatches();
 
         return $totalCost;
+    }
+
+    /**
+     * Get total quantity allocated to projects
+     */
+    public function allocatedQuantity(): float
+    {
+        return (float) $this->projects()->sum('quantity_allocated');
+    }
+
+    /**
+     * Get quantity available for allocation (not yet assigned to projects)
+     */
+    public function availableForAllocation(): float
+    {
+        return max(0, $this->available_quantity - $this->allocatedQuantity());
+    }
+
+    /**
+     * Allocate resources to a project
+     * This TRANSFERS inventory from warehouse to project without consuming from batches yet
+     * Batches are only consumed when the project actually uses the resources
+     */
+    public function allocateToProject(Project $project, float $quantity, ?string $notes = null): void
+    {
+        if ($quantity <= 0) {
+            throw new InvalidArgumentException("Allocation quantity must be positive");
+        }
+
+        if ($this->availableForAllocation() < $quantity) {
+            throw new InvalidArgumentException(
+                "Insufficient quantity for allocation. Available: {$this->availableForAllocation()}, Requested: {$quantity}"
+            );
+        }
+
+        // Create transfer record (from warehouse to project)
+        ResourceTransfer::create([
+            'resource_id' => $this->id,
+            'from_project_id' => null, // From warehouse
+            'to_project_id' => $project->id,
+            'quantity' => $quantity,
+            'transfer_type' => 'warehouse_to_project',
+            'notes' => $notes,
+            'transferred_by' => auth()->id(),
+            'transferred_at' => now(),
+        ]);
+
+        // Update or create pivot record
+        $existing = $project->resources()->where('resource_id', $this->id)->first();
+        
+        if ($existing) {
+            $project->resources()->updateExistingPivot($this->id, [
+                'quantity_allocated' => $existing->pivot->quantity_allocated + $quantity,
+                'quantity_available' => $existing->pivot->quantity_available + $quantity,
+            ]);
+        } else {
+            $project->resources()->attach($this->id, [
+                'quantity_allocated' => $quantity,
+                'quantity_consumed' => 0,
+                'quantity_available' => $quantity,
+                'notes' => $notes,
+            ]);
+        }
     }
 
     /**
