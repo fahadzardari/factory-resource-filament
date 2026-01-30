@@ -513,6 +513,7 @@ class ViewProject extends ViewRecord
                 ->modalDescription('You are about to mark this project as completed. Please decide what to do with all remaining resources at this project site.')
                 ->modalIcon('heroicon-o-check-circle')
                 ->modalSubmitActionLabel('Complete Project & Process Resources')
+                ->modalWidth('4xl')
                 ->form(function () {
                     $stocks = \App\Services\StockCalculator::getProjectResourceStocks($this->record->id);
                     
@@ -542,7 +543,7 @@ class ViewProject extends ViewRecord
                                     ->label('What to do with this resource?')
                                     ->helperText('Choose how to handle these materials')
                                     ->options([
-                                        'return_hub' => '🏢 Return to Central Hub (Recommended)',
+                                        'return_hub' => '🏢 Return to Central Hub',
                                         'transfer' => '🚚 Transfer to Another Project',
                                         'keep' => '❌ Keep at Project (Write-off)',
                                     ])
