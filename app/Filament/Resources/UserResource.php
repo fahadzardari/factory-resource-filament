@@ -13,18 +13,19 @@ use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Illuminate\Support\Facades\Hash;
+use Filament\Support\Enums\FontWeight;
 
 class UserResource extends Resource
 {
     protected static ?string $model = User::class;
 
-    protected static ?string $navigationIcon = 'heroicon-o-user-group';
+    protected static ?string $navigationIcon = 'heroicon-o-users';
     
-    protected static ?string $navigationLabel = 'User Management';
+    protected static ?string $navigationLabel = 'Users';
     
     protected static ?string $navigationGroup = 'Administration';
     
-    protected static ?int $navigationSort = 99;
+    protected static ?int $navigationSort = 10;
 
     public static function form(Form $form): Form
     {
@@ -40,15 +41,35 @@ class UserResource extends Resource
                             ->required()
                             ->unique(ignoreRecord: true)
                             ->maxLength(255),
+                        Forms\Components\Select::make('role')
+                            ->required()
+                            ->options([
+                                'admin' => 'Admin',
+                                'manager' => 'Manager',
+                                'user' => 'User',
+                            ])
+                            ->default('user')
+                            ->native(false),
+                    ])->columns(3),
+                    
+                Forms\Components\Section::make('Password')
+                    ->description('Leave blank to keep current password (when editing)')
+                    ->schema([
                         Forms\Components\TextInput::make('password')
                             ->password()
-                            ->required(fn ($context) => $context === 'create')
+                            ->required(fn ($operation) => $operation === 'create')
                             ->dehydrateStateUsing(fn ($state) => Hash::make($state))
                             ->dehydrated(fn ($state) => filled($state))
                             ->maxLength(255)
-                            ->helperText(fn ($context) => $context === 'edit' ? 'Leave blank to keep current password' : ''),
-                    ])
-                    ->columns(2),
+                            ->revealable(),
+                        Forms\Components\TextInput::make('password_confirmation')
+                            ->password()
+                            ->same('password')
+                            ->requiredWith('password')
+                            ->dehydrated(false)
+                            ->revealable(),
+                    ])->columns(2)
+                    ->visible(fn ($operation) => $operation !== 'view'),
             ]);
     }
 
@@ -58,49 +79,51 @@ class UserResource extends Resource
             ->columns([
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->weight(FontWeight::Bold),
                 Tables\Columns\TextColumn::make('email')
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->copyable(),
                 Tables\Columns\TextColumn::make('role')
+                    ->searchable()
+                    ->sortable()
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
-                        'super_admin' => 'danger',
-                        'user' => 'success',
+                        'admin' => 'danger',
+                        'manager' => 'warning',
+                        'user' => 'info',
                         default => 'gray',
-                    })
-                    ->formatStateUsing(fn (string $state): string => match ($state) {
-                        'super_admin' => 'Super Admin',
-                        'user' => 'User',
-                        default => $state,
                     }),
-                Tables\Columns\TextColumn::make('created_at')
-                    ->label('Registered')
+                Tables\Columns\TextColumn::make('email_verified_at')
+                    ->label('Verified')
                     ->dateTime()
-                    ->sortable(),
+                    ->sortable()
+                    ->toggleable(),
+                Tables\Columns\TextColumn::make('created_at')
+                    ->dateTime()
+                    ->sortable()
+                    ->toggleable(isToggledHiddenByDefault: true),
             ])
             ->filters([
                 Tables\Filters\SelectFilter::make('role')
                     ->options([
-                        'super_admin' => 'Super Admin',
+                        'admin' => 'Admin',
+                        'manager' => 'Manager',
                         'user' => 'User',
                     ]),
             ])
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make()
-                    ->hidden(fn (User $record) => $record->role === 'super_admin'),
+                    ->requiresConfirmation(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
+                    Tables\Actions\DeleteBulkAction::make()
+                        ->requiresConfirmation(),
                 ]),
             ]);
-    }
-    
-    public static function canViewAny(): bool
-    {
-        return auth()->user()?->isSuperAdmin() ?? false;
     }
 
     public static function getRelations(): array

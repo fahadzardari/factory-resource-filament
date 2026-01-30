@@ -19,10 +19,8 @@ class ResourceFactory extends Factory
         return [
             'name' => fake()->words(3, true),
             'sku' => strtoupper(fake()->bothify('RES-###-???')),
-            'category' => fake()->randomElement(['Raw Materials', 'Concrete & Cement', 'Electrical', 'Plumbing']),
-            'unit_type' => 'kg',
-            'available_quantity' => 0, // Will be synced from batches
-            'purchase_price' => fake()->randomFloat(2, 10, 500),
+            'category' => fake()->randomElement(['Raw Materials', 'Concrete & Cement', 'Electrical', 'Plumbing', 'Steel & Metals']),
+            'base_unit' => fake()->randomElement(['kg', 'piece', 'meter', 'liter', 'box']),
             'description' => fake()->sentence(),
         ];
     }

@@ -2,11 +2,11 @@
 
 namespace App\Filament\Resources;
 
-use App\Exports\ProjectResourceUsageExport;
 use App\Filament\Resources\ProjectResource\Pages;
 use App\Filament\Resources\ProjectResource\RelationManagers;
 use App\Models\Project;
-use App\Models\ResourceTransfer;
+use App\Models\Resource as ResourceModel;
+use App\Services\InventoryTransactionService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Notifications\Notification;
@@ -14,7 +14,6 @@ use Filament\Resources\Resource;
 use Filament\Tables;
 use Filament\Tables\Table;
 use Illuminate\Database\Eloquent\Builder;
-use Maatwebsite\Excel\Facades\Excel;
 
 class ProjectResource extends Resource
 {
@@ -45,12 +44,12 @@ class ProjectResource extends Resource
                             ->helperText('Unique identifier for this project'),
                         Forms\Components\Select::make('status')
                             ->options([
-                                'pending' => 'Pending',
-                                'active' => 'Active',
-                                'completed' => 'Completed',
+                                'Pending' => 'Pending',
+                                'Active' => 'Active',
+                                'Completed' => 'Completed',
                             ])
                             ->required()
-                            ->default('pending')
+                            ->default('Pending')
                             ->native(false),
                     ])
                     ->columns(3),
@@ -88,9 +87,9 @@ class ProjectResource extends Resource
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
-                        'pending' => 'gray',
-                        'active' => 'success',
-                        'completed' => 'info',
+                        'Pending' => 'gray',
+                        'Active' => 'success',
+                        'Completed' => 'info',
                     })
                     ->sortable(),
                 Tables\Columns\TextColumn::make('start_date')
@@ -99,10 +98,6 @@ class ProjectResource extends Resource
                 Tables\Columns\TextColumn::make('end_date')
                     ->date()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('resources_count')
-                    ->counts('resources')
-                    ->label('Resources')
-                    ->badge(),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -111,76 +106,146 @@ class ProjectResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
-                        'pending' => 'Pending',
-                        'active' => 'Active',
-                        'completed' => 'Completed',
+                        'Pending' => 'Pending',
+                        'Active' => 'Active',
+                        'Completed' => 'Completed',
                     ]),
             ])
-            ->headerActions([
-                Tables\Actions\Action::make('export')
-                    ->label('Export All Projects')
-                    ->icon('heroicon-o-document-arrow-down')
-                    ->color('success')
-                    ->action(fn () => Excel::download(
-                        new ProjectResourceUsageExport(),
-                        'project-resource-usage-' . now()->format('Y-m-d-His') . '.xlsx'
-                    )),
-            ])
             ->actions([
-                Tables\Actions\Action::make('complete')
-                    ->icon('heroicon-o-check-circle')
-                    ->color('success')
-                    ->hidden(fn (Project $record) => $record->status === 'completed')
-                    ->requiresConfirmation()
-                    ->modalHeading('Complete Project')
-                    ->modalDescription(fn (Project $record) => "Are you sure you want to complete project '{$record->name}'? All remaining resources will be returned to the warehouse.")
-                    ->action(function (Project $record) {
-                        // Return all resources to warehouse
-                        foreach ($record->resources as $resource) {
-                            if ($resource->pivot->quantity_available > 0) {
-                                // Return to warehouse
-                                $resource->update([
-                                    'available_quantity' => $resource->available_quantity + $resource->pivot->quantity_available,
-                                ]);
-
-                                // Log transfer
-                                ResourceTransfer::create([
-                                    'resource_id' => $resource->id,
-                                    'from_project_id' => $record->id,
-                                    'to_project_id' => null,
-                                    'quantity' => $resource->pivot->quantity_available,
-                                    'transfer_type' => 'project_to_warehouse',
-                                    'notes' => 'Project completion - returned to warehouse',
-                                    'transferred_by' => auth()->id(),
-                                ]);
-                            }
+                Tables\Actions\Action::make('consume')
+                    ->label('Consume')
+                    ->icon('heroicon-o-fire')
+                    ->color('danger')
+                    ->visible(fn (Project $record) => $record->status === 'Active')
+                    ->form([
+                        Forms\Components\Select::make('resource_id')
+                            ->label('Resource')
+                            ->required()
+                            ->options(ResourceModel::pluck('name', 'id'))
+                            ->searchable()
+                            ->reactive()
+                            ->helperText('Select the resource to consume'),
+                        Forms\Components\TextInput::make('quantity')
+                            ->required()
+                            ->numeric()
+                            ->minValue(0.01)
+                            ->label('Quantity')
+                            ->helperText('Amount to consume from project inventory'),
+                        Forms\Components\DatePicker::make('transaction_date')
+                            ->required()
+                            ->default(now())
+                            ->label('Consumption Date')
+                            ->maxDate(now()),
+                        Forms\Components\Textarea::make('notes')
+                            ->maxLength(1000)
+                            ->rows(3)
+                            ->helperText('Optional notes about this consumption'),
+                    ])
+                    ->action(function (Project $record, array $data) {
+                        $service = app(InventoryTransactionService::class);
+                        
+                        try {
+                            $metadata = [];
+                            if (!empty($data['notes'])) $metadata['notes'] = $data['notes'];
+                            
+                            $service->recordConsumption(
+                                $data['resource_id'],
+                                $record->id,
+                                $data['quantity'],
+                                \Carbon\Carbon::parse($data['transaction_date']),
+                                !empty($metadata) ? json_encode($metadata) : null
+                            );
+                            
+                            $resource = ResourceModel::find($data['resource_id']);
+                            
+                            Notification::make()
+                                ->success()
+                                ->title('Consumption Recorded')
+                                ->body("Consumed {$data['quantity']} {$resource->base_unit} of {$resource->name} at {$record->name}.")
+                                ->send();
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Consumption Failed')
+                                ->body($e->getMessage())
+                                ->send();
                         }
-
-                        // Update project status
-                        $record->update([
-                            'status' => 'completed',
-                            'end_date' => $record->end_date ?? now(),
-                        ]);
-
-                        Notification::make()
-                            ->success()
-                            ->title('Project Completed')
-                            ->body('All resources have been returned to the warehouse.')
-                            ->send();
                     }),
+                    
+                Tables\Actions\Action::make('transfer')
+                    ->label('Transfer')
+                    ->icon('heroicon-o-arrow-path')
+                    ->color('info')
+                    ->visible(fn (Project $record) => $record->status === 'Active')
+                    ->form([
+                        Forms\Components\Select::make('resource_id')
+                            ->label('Resource')
+                            ->required()
+                            ->options(ResourceModel::pluck('name', 'id'))
+                            ->searchable()
+                            ->helperText('Select the resource to transfer'),
+                        Forms\Components\Select::make('to_project_id')
+                            ->label('To Project')
+                            ->required()
+                            ->options(fn ($record) => 
+                                Project::where('status', 'Active')
+                                    ->where('id', '!=', $record->id)
+                                    ->pluck('name', 'id')
+                            )
+                            ->searchable()
+                            ->helperText('Destination project'),
+                        Forms\Components\TextInput::make('quantity')
+                            ->required()
+                            ->numeric()
+                            ->minValue(0.01)
+                            ->label('Quantity'),
+                        Forms\Components\DatePicker::make('transaction_date')
+                            ->required()
+                            ->default(now())
+                            ->label('Transfer Date')
+                            ->maxDate(now()),
+                        Forms\Components\Textarea::make('notes')
+                            ->maxLength(1000)
+                            ->rows(3),
+                    ])
+                    ->action(function (Project $record, array $data) {
+                        $service = app(InventoryTransactionService::class);
+                        
+                        try {
+                            $metadata = [];
+                            if (!empty($data['notes'])) $metadata['notes'] = $data['notes'];
+                            
+                            $service->recordTransfer(
+                                $data['resource_id'],
+                                $record->id,
+                                $data['to_project_id'],
+                                $data['quantity'],
+                                \Carbon\Carbon::parse($data['transaction_date']),
+                                !empty($metadata) ? json_encode($metadata) : null
+                            );
+                            
+                            $resource = ResourceModel::find($data['resource_id']);
+                            $toProject = Project::find($data['to_project_id']);
+                            
+                            Notification::make()
+                                ->success()
+                                ->title('Transfer Successful')
+                                ->body("Transferred {$data['quantity']} {$resource->base_unit} of {$resource->name} from {$record->name} to {$toProject->name}.")
+                                ->send();
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Transfer Failed')
+                                ->body($e->getMessage())
+                                ->send();
+                        }
+                    }),
+                    
                 Tables\Actions\EditAction::make(),
             ])
             ->bulkActions([
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make(),
-                    Tables\Actions\BulkAction::make('export')
-                        ->label('Export Selected')
-                        ->icon('heroicon-o-document-arrow-down')
-                        ->color('success')
-                        ->action(fn (Collection $records) => Excel::download(
-                            new ProjectResourceUsageExport($records->pluck('id')->toArray()),
-                            'projects-export-' . now()->format('Y-m-d-His') . '.xlsx'
-                        )),
                 ]),
             ]);
     }
@@ -188,8 +253,7 @@ class ProjectResource extends Resource
     public static function getRelations(): array
     {
         return [
-            RelationManagers\ResourcesRelationManager::class,
-            RelationManagers\ConsumptionsRelationManager::class,
+            //
         ];
     }
 

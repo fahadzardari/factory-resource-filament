@@ -4,12 +4,12 @@ namespace App\Models;
 
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Database\Eloquent\Relations\BelongsToMany;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 
 class Project extends Model
 {
     use HasFactory;
+
     protected $fillable = [
         'name',
         'code',
@@ -24,47 +24,42 @@ class Project extends Model
         'end_date' => 'date',
     ];
 
-    public function resources(): BelongsToMany
+    /**
+     * Relationships
+     */
+    public function transactions(): HasMany
     {
-        return $this->belongsToMany(Resource::class)
-            ->withPivot(['quantity_allocated', 'quantity_consumed', 'quantity_available', 'notes'])
-            ->withTimestamps();
-    }
-    
-    public function batches(): HasMany
-    {
-        return $this->hasMany(ResourceBatch::class);
+        return $this->hasMany(InventoryTransaction::class);
     }
 
-    public function consumptions(): HasMany
+    /**
+     * Get stock of a specific resource at this project
+     */
+    public function getResourceStock(int $resourceId): float
     {
-        return $this->hasMany(ProjectResourceConsumption::class);
+        return $this->transactions()
+            ->where('resource_id', $resourceId)
+            ->sum('quantity');
     }
 
-    // Get today's consumption records
-    public function todayConsumptions(): HasMany
-    {
-        return $this->hasMany(ProjectResourceConsumption::class)
-            ->whereDate('consumption_date', today());
-    }
-    
     /**
-     * Get total inventory quantity for a specific resource in this project
-     * Returns quantity in the resource's base unit
+     * Get all resources with stock at this project
      */
-    public function getResourceQuantity(Resource $resource): float
+    public function getInventorySummary()
     {
-        return $this->batches()
-            ->where('resource_id', $resource->id)
-            ->get()
-            ->sum(fn($batch) => $batch->quantity_remaining * $batch->conversion_factor);
+        return $this->transactions()
+            ->selectRaw('resource_id, SUM(quantity) as total_quantity, SUM(total_value) as total_value')
+            ->groupBy('resource_id')
+            ->having('total_quantity', '>', 0)
+            ->with('resource')
+            ->get();
     }
-    
+
     /**
-     * Check if project has sufficient quantity of a resource
+     * Get total inventory value at this project
      */
-    public function hasResourceQuantity(Resource $resource, float $quantity): bool
+    public function getTotalInventoryValueAttribute(): float
     {
-        return $this->getResourceQuantity($resource) >= $quantity;
+        return $this->transactions()->sum('total_value');
     }
 }

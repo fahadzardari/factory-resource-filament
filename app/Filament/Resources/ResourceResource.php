@@ -5,6 +5,8 @@ namespace App\Filament\Resources;
 use App\Filament\Resources\ResourceResource\Pages;
 use App\Filament\Resources\ResourceResource\RelationManagers;
 use App\Models\Resource as ResourceModel;
+use App\Models\Project;
+use App\Services\InventoryTransactionService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -15,6 +17,8 @@ use Illuminate\Database\Eloquent\SoftDeletingScope;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Filament\Support\Enums\FontWeight;
+use Filament\Notifications\Notification;
+use Illuminate\Support\Str;
 
 class ResourceResource extends Resource
 {
@@ -41,7 +45,7 @@ class ResourceResource extends Resource
                         Forms\Components\TextInput::make('name')
                             ->required()
                             ->maxLength(255)
-                            ->helperText('A descriptive name for the resource (e.g., "Steel Rebar 12mm")'),
+                            ->helperText('A descriptive name for the resource (e.g., "Portland Cement")'),
                         Forms\Components\TextInput::make('sku')
                             ->label('SKU')
                             ->required()
@@ -59,91 +63,17 @@ class ResourceResource extends Resource
                             ->searchable()
                             ->native(false)
                             ->helperText('Group resources by type for easier management'),
-                        Forms\Components\Select::make('unit_type')
-                            ->label('Default Unit Type')
-                            ->options([
-                                'kg' => 'Kilograms (kg)',
-                                'g' => 'Grams (g)',
-                                'ton' => 'Metric Tons',
-                                'lb' => 'Pounds (lb)',
-                                'liter' => 'Liters',
-                                'ml' => 'Milliliters',
-                                'gallon' => 'Gallons',
-                                'meter' => 'Meters',
-                                'cm' => 'Centimeters',
-                                'ft' => 'Feet',
-                                'cubic_ft' => 'Cubic Feet',
-                                'cubic_m' => 'Cubic Meters',
-                                'sq_m' => 'Square Meters',
-                                'sq_ft' => 'Square Feet',
-                                'piece' => 'Pieces',
-                                'box' => 'Boxes',
-                                'carton' => 'Cartons',
-                                'bundle' => 'Bundles',
-                                'roll' => 'Rolls',
-                                'sheet' => 'Sheets',
-                                'pair' => 'Pairs',
-                            ])
+                        Forms\Components\TextInput::make('base_unit')
+                            ->label('Base Unit')
                             ->required()
-                            ->searchable()
-                            ->native(false)
-                            ->helperText('Default unit for this resource. Batches can have different units.'),
-                    ])
-                    ->columns(2),
-                    
-                Forms\Components\Section::make('Pricing & Stock Information')
-                    ->description('💡 Actual quantities are calculated from purchase batches. Edit batches to manage stock.')
-                    ->icon('heroicon-o-currency-dollar')
-                    ->schema([
-                        Forms\Components\TextInput::make('purchase_price')
-                            ->label('Base Purchase Price')
-                            ->required()
-                            ->numeric()
-                            ->prefix('$')
-                            ->minValue(0)
-                            ->step(0.01)
-                            ->helperText('Default price per unit. Each batch can have different pricing.'),
-                        Forms\Components\Placeholder::make('total_quantity_display')
-                            ->label('Total Quantity')
-                            ->content(fn (?ResourceModel $record): string => 
-                                $record ? number_format($record->available_quantity, 2) . ' ' . $record->unit_type : '0.00'
-                            )
-                            ->helperText('Sum of remaining quantities across all batches'),
-                        Forms\Components\Placeholder::make('total_value_display')
-                            ->label('Total Inventory Value')
-                            ->content(fn (?ResourceModel $record): string => 
-                                $record ? '$' . number_format($record->total_value, 2) : '$0.00'
-                            )
-                            ->helperText('Calculated from batch quantities × their purchase prices'),
-                        Forms\Components\Hidden::make('total_quantity')->default(0),
-                        Forms\Components\Hidden::make('available_quantity')->default(0),
-                    ])
-                    ->columns(3)
-                    ->visible(fn ($operation) => $operation === 'edit'),
-                    
-                Forms\Components\Section::make('Pricing')
-                    ->description('Set the base purchase price for this resource.')
-                    ->icon('heroicon-o-currency-dollar')
-                    ->schema([
-                        Forms\Components\TextInput::make('purchase_price')
-                            ->label('Base Purchase Price')
-                            ->required()
-                            ->numeric()
-                            ->prefix('$')
-                            ->minValue(0)
-                            ->step(0.01)
-                            ->helperText('Default price per unit. Each batch can have different pricing.'),
-                    ])
-                    ->visible(fn ($operation) => $operation === 'create'),
-                    
-                Forms\Components\Section::make('Additional Information')
-                    ->icon('heroicon-o-document-text')
-                    ->schema([
+                            ->maxLength(50)
+                            ->helperText('Unit of measurement (e.g., kg, liter, piece)'),
                         Forms\Components\Textarea::make('description')
                             ->maxLength(65535)
                             ->columnSpanFull()
                             ->helperText('Add notes about specifications, usage, or handling instructions'),
-                    ]),
+                    ])
+                    ->columns(2),
             ]);
     }
 
@@ -162,7 +92,7 @@ class ResourceResource extends Resource
                     ->searchable()
                     ->sortable()
                     ->wrap()
-                    ->description(fn ($record) => $record->description ? \Str::limit($record->description, 50) : null),
+                    ->description(fn ($record) => $record->description ? Str::limit($record->description, 50) : null),
                 Tables\Columns\TextColumn::make('category')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
@@ -174,36 +104,28 @@ class ResourceResource extends Resource
                     })
                     ->searchable()
                     ->sortable(),
-                Tables\Columns\TextColumn::make('unit_type')
+                Tables\Columns\TextColumn::make('base_unit')
                     ->label('Unit')
                     ->sortable()
                     ->badge()
                     ->color('gray'),
-                Tables\Columns\TextColumn::make('available_quantity')
-                    ->label('Available Qty')
+                Tables\Columns\TextColumn::make('hub_stock')
+                    ->label('Hub Stock')
                     ->numeric(decimalPlaces: 2)
                     ->sortable()
                     ->color(fn ($state) => $state > 0 ? 'success' : 'danger')
                     ->weight(FontWeight::Bold)
-                    ->description(fn ($record) => 'From ' . $record->batches()->count() . ' batch(es)'),
-                Tables\Columns\TextColumn::make('weighted_average_price')
+                    ->description(fn ($record) => 'At central hub'),
+                Tables\Columns\TextColumn::make('weighted_avg_price')
                     ->label('Avg Price')
                     ->money('USD')
-                    ->sortable()
                     ->description('Weighted avg')
                     ->toggleable(),
-                Tables\Columns\TextColumn::make('total_value')
-                    ->label('Total Value')
+                Tables\Columns\TextColumn::make('hub_value')
+                    ->label('Hub Value')
                     ->money('USD')
-                    ->sortable()
                     ->weight(FontWeight::Bold)
                     ->color('success'),
-                Tables\Columns\TextColumn::make('batches_count')
-                    ->label('Batches')
-                    ->counts('batches')
-                    ->sortable()
-                    ->badge()
-                    ->color('info'),
                 Tables\Columns\TextColumn::make('created_at')
                     ->dateTime()
                     ->sortable()
@@ -220,12 +142,140 @@ class ResourceResource extends Resource
                     ]),
                 Tables\Filters\Filter::make('low_stock')
                     ->label('Low Stock (< 100)')
-                    ->query(fn (Builder $query): Builder => $query->where('available_quantity', '<', 100)),
+                    ->query(fn (Builder $query): Builder => 
+                        $query->whereHas('transactions', function ($q) {
+                            // This is a placeholder - would need proper calculation
+                        })
+                    ),
                 Tables\Filters\Filter::make('out_of_stock')
                     ->label('Out of Stock')
-                    ->query(fn (Builder $query): Builder => $query->where('available_quantity', '<=', 0)),
+                    ->query(fn (Builder $query): Builder => 
+                        $query->whereDoesntHave('transactions')
+                    ),
             ])
             ->actions([
+                Tables\Actions\Action::make('purchase')
+                    ->label('Purchase')
+                    ->icon('heroicon-o-shopping-cart')
+                    ->color('success')
+                    ->form([
+                        Forms\Components\TextInput::make('quantity')
+                            ->required()
+                            ->numeric()
+                            ->minValue(0.01)
+                            ->label('Quantity')
+                            ->suffix(fn ($record) => $record->base_unit),
+                        Forms\Components\TextInput::make('unit_price')
+                            ->required()
+                            ->numeric()
+                            ->minValue(0.01)
+                            ->prefix('$')
+                            ->label('Unit Price'),
+                        Forms\Components\DatePicker::make('transaction_date')
+                            ->required()
+                            ->default(now())
+                            ->label('Purchase Date')
+                            ->maxDate(now()),
+                        Forms\Components\TextInput::make('supplier')
+                            ->maxLength(255)
+                            ->label('Supplier Name'),
+                        Forms\Components\TextInput::make('invoice_number')
+                            ->maxLength(255)
+                            ->label('Invoice #'),
+                        Forms\Components\Textarea::make('notes')
+                            ->maxLength(1000)
+                            ->rows(3),
+                    ])
+                    ->action(function (ResourceModel $record, array $data) {
+                        $service = app(InventoryTransactionService::class);
+                        
+                        try {
+                            $metadata = [];
+                            if (!empty($data['supplier'])) $metadata['supplier'] = $data['supplier'];
+                            if (!empty($data['invoice_number'])) $metadata['invoice_number'] = $data['invoice_number'];
+                            if (!empty($data['notes'])) $metadata['notes'] = $data['notes'];
+                            
+                            $service->recordPurchase(
+                                $record->id,
+                                $data['quantity'],
+                                $data['unit_price'],
+                                \Carbon\Carbon::parse($data['transaction_date']),
+                                json_encode($metadata)
+                            );
+                            
+                            Notification::make()
+                                ->success()
+                                ->title('Purchase Recorded')
+                                ->body("Added {$data['quantity']} {$record->base_unit} of {$record->name} to hub inventory.")
+                                ->send();
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Purchase Failed')
+                                ->body($e->getMessage())
+                                ->send();
+                        }
+                    }),
+                    
+                Tables\Actions\Action::make('allocate')
+                    ->label('Allocate')
+                    ->icon('heroicon-o-arrow-right-circle')
+                    ->color('warning')
+                    ->form([
+                        Forms\Components\Select::make('project_id')
+                            ->label('Allocate to Project')
+                            ->required()
+                            ->options(Project::where('status', 'Active')->pluck('name', 'id'))
+                            ->searchable()
+                            ->helperText('Select the project site to allocate inventory to'),
+                        Forms\Components\TextInput::make('quantity')
+                            ->required()
+                            ->numeric()
+                            ->minValue(0.01)
+                            ->label('Quantity')
+                            ->suffix(fn ($record) => $record->base_unit)
+                            ->helperText(fn ($record) => "Available at hub: {$record->hub_stock} {$record->base_unit}"),
+                        Forms\Components\DatePicker::make('transaction_date')
+                            ->required()
+                            ->default(now())
+                            ->label('Allocation Date')
+                            ->maxDate(now()),
+                        Forms\Components\Textarea::make('notes')
+                            ->maxLength(1000)
+                            ->rows(3)
+                            ->helperText('Optional notes about this allocation'),
+                    ])
+                    ->action(function (ResourceModel $record, array $data) {
+                        $service = app(InventoryTransactionService::class);
+                        
+                        try {
+                            $metadata = [];
+                            if (!empty($data['notes'])) $metadata['notes'] = $data['notes'];
+                            
+                            $service->recordAllocation(
+                                $record->id,
+                                $data['project_id'],
+                                $data['quantity'],
+                                \Carbon\Carbon::parse($data['transaction_date']),
+                                !empty($metadata) ? json_encode($metadata) : null
+                            );
+                            
+                            $project = Project::find($data['project_id']);
+                            
+                            Notification::make()
+                                ->success()
+                                ->title('Allocation Successful')
+                                ->body("Allocated {$data['quantity']} {$record->base_unit} of {$record->name} to {$project->name}.")
+                                ->send();
+                        } catch (\Exception $e) {
+                            Notification::make()
+                                ->danger()
+                                ->title('Allocation Failed')
+                                ->body($e->getMessage())
+                                ->send();
+                        }
+                    }),
+                    
                 Tables\Actions\ViewAction::make(),
                 Tables\Actions\EditAction::make(),
             ])
@@ -233,11 +283,11 @@ class ResourceResource extends Resource
                 Tables\Actions\BulkActionGroup::make([
                     Tables\Actions\DeleteBulkAction::make()
                         ->requiresConfirmation()
-                        ->modalDescription('This will delete the resource and ALL associated batches. This action cannot be undone.'),
+                        ->modalDescription('This will delete the resource and ALL associated transactions. This action cannot be undone.'),
                 ]),
             ])
             ->emptyStateHeading('No resources yet')
-            ->emptyStateDescription('Start by adding resources to your central inventory. Each resource can have multiple purchase batches.')
+            ->emptyStateDescription('Start by adding resources to your central inventory.')
             ->emptyStateIcon('heroicon-o-cube')
             ->emptyStateActions([
                 Tables\Actions\CreateAction::make()
@@ -249,7 +299,7 @@ class ResourceResource extends Resource
     public static function getRelations(): array
     {
         return [
-            RelationManagers\BatchesRelationManager::class,
+            //
         ];
     }
 

@@ -16,10 +16,7 @@ return new class extends Migration
             $table->string('name');
             $table->string('sku')->unique();
             $table->string('category')->nullable();
-            $table->string('unit_type'); // e.g., kg, meters, pieces
-            $table->decimal('purchase_price', 10, 2); // Rate/Cost
-            $table->decimal('total_quantity', 10, 2)->default(0);
-            $table->decimal('available_quantity', 10, 2)->default(0);
+            $table->string('base_unit'); // Base unit for storage (kg, pieces, meters, etc.)
             $table->text('description')->nullable();
             $table->timestamps();
         });
