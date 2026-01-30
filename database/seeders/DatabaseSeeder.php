@@ -12,6 +12,13 @@ class DatabaseSeeder extends Seeder
 
     /**
      * Seed the application's database.
+     * 
+     * For Module 1 Testing: Central Inventory Control
+     * - Users: Admin and regular users
+     * - Resources: Core resource catalog with proper categorization
+     * - ResourceBatches: Purchase batches with multiple units per resource
+     * 
+     * Projects are excluded for now - focusing on inventory management first.
      */
     public function run(): void
     {
@@ -19,7 +26,7 @@ class DatabaseSeeder extends Seeder
             UserSeeder::class,
             ResourceSeeder::class,
             ResourceBatchSeeder::class,
-            ProjectSeeder::class,
+            // ProjectSeeder::class, // Disabled for Module 1 testing
         ]);
     }
 }
