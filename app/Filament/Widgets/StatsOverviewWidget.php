@@ -15,8 +15,8 @@ class StatsOverviewWidget extends BaseWidget
     {
         $totalResources = ResourceModel::count();
         $totalProjects = Project::count();
-        $activeProjects = Project::where('status', 'Active')->count();
-        $completedProjects = Project::where('status', 'Completed')->count();
+        $activeProjects = Project::where('status', 'active')->count();
+        $completedProjects = Project::where('status', 'completed')->count();
         
         // Calculate total hub inventory value (ledger-based)
         $hubInventoryValue = InventoryTransaction::whereNull('project_id')

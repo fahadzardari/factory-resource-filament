@@ -349,7 +349,7 @@ class ResourceResource extends Resource
                         Forms\Components\Select::make('project_id')
                             ->label('Allocate to Project')
                             ->required()
-                            ->options(Project::where('status', 'Active')->pluck('name', 'id'))
+                            ->options(Project::where('status', 'active')->pluck('name', 'id'))
                             ->searchable()
                             ->helperText('Select the project site to allocate inventory to'),
                         Forms\Components\TextInput::make('quantity')

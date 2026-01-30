@@ -279,7 +279,7 @@ class ViewResource extends ViewRecord
                         ->label('Select Project')
                         ->helperText('Which project needs these materials?')
                         ->options(function () {
-                            return Project::where('status', 'Active')
+                            return Project::where('status', 'active')
                                 ->get()
                                 ->mapWithKeys(fn ($p) => [$p->id => "{$p->name} ({$p->code})"]);
                         })

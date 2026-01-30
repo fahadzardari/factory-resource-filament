@@ -44,12 +44,12 @@ class ProjectResource extends Resource
                             ->helperText('Unique identifier for this project'),
                         Forms\Components\Select::make('status')
                             ->options([
-                                'Pending' => 'Pending',
-                                'Active' => 'Active',
-                                'Completed' => 'Completed',
+                                'pending' => 'Pending',
+                                'active' => 'Active',
+                                'completed' => 'Completed',
                             ])
                             ->required()
-                            ->default('Pending')
+                            ->default('pending')
                             ->native(false),
                     ])
                     ->columns(3),
@@ -86,7 +86,7 @@ class ProjectResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
-                    ->color(fn (string $state): string => match (strtolower($state)) {
+                    ->color(fn (string $state): string => match ($state) {
                         'pending' => 'gray',
                         'active' => 'success',
                         'completed' => 'info',
@@ -107,9 +107,9 @@ class ProjectResource extends Resource
             ->filters([
                 Tables\Filters\SelectFilter::make('status')
                     ->options([
-                        'Pending' => 'Pending',
-                        'Active' => 'Active',
-                        'Completed' => 'Completed',
+                        'pending' => 'Pending',
+                        'active' => 'Active',
+                        'completed' => 'Completed',
                     ]),
             ])
             ->recordUrl(

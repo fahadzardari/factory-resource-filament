@@ -39,7 +39,7 @@ class ViewProject extends ViewRecord
                         
                         Infolists\Components\TextEntry::make('status')
                             ->badge()
-                            ->color(fn (string $state): string => match (strtolower($state)) {
+                            ->color(fn (string $state): string => match ($state) {
                                 'pending' => 'gray',
                                 'active' => 'success',
                                 'completed' => 'info',
@@ -158,7 +158,7 @@ class ViewProject extends ViewRecord
                     ->label('Allocate Resource')
                     ->icon('heroicon-o-plus-circle')
                     ->color('success')
-                    ->visible(fn () => strtolower($this->record->status) === 'active')
+                    ->visible(fn () => $this->record->status === 'active')
                 ->modalHeading('Allocate Resource from Hub to Project')
                 ->modalDescription('Move resources from the Central Hub warehouse to this project site. This will reduce Hub inventory and increase project inventory.')
                 ->modalIcon('heroicon-o-truck')
@@ -245,7 +245,7 @@ class ViewProject extends ViewRecord
                 ->label('Consume Resource')
                 ->icon('heroicon-o-minus-circle')
                 ->color('danger')
-                ->visible(fn () => strtolower($this->record->status) === 'active')
+                ->visible(fn () => $this->record->status === 'active')
                 ->modalHeading('Record Resource Consumption')
                 ->modalDescription('Track materials used in this project. This will reduce the project inventory and cannot be undone.')
                 ->modalIcon('heroicon-o-fire')
@@ -326,7 +326,7 @@ class ViewProject extends ViewRecord
                 ->label('Transfer Resource')
                 ->icon('heroicon-o-arrow-right-circle')
                 ->color('warning')
-                ->visible(fn () => strtolower($this->record->status) === 'active')
+                ->visible(fn () => $this->record->status === 'active')
                 ->modalHeading('Transfer Resource to Another Location')
                 ->modalDescription('Move resources from this project to another project or back to the Central Hub.')
                 ->modalIcon('heroicon-o-truck')
@@ -507,7 +507,7 @@ class ViewProject extends ViewRecord
                 ->label('Complete Project')
                 ->icon('heroicon-o-check-circle')
                 ->color('success')
-                ->visible(fn () => strtolower($this->record->status) === 'active')
+                ->visible(fn () => $this->record->status === 'active')
                 ->requiresConfirmation()
                 ->modalHeading('🎉 Complete This Project')
                 ->modalDescription('You are about to mark this project as completed. Please decide what to do with all remaining resources at this project site.')
@@ -530,8 +530,7 @@ class ViewProject extends ViewRecord
                             ->content('📦 You have resources remaining at this project. For EACH resource below, choose what to do with it:
 
 • **Return to Hub**: Send back to central warehouse for future use
-• **Transfer to Project**: Send directly to another active project  
-• **Keep at Project**: Leave it here (write-off, will not be tracked anymore)')
+• **Transfer to Project**: Send directly to another active project')
                             ->columnSpanFull(),
                     ];
                     
@@ -545,7 +544,6 @@ class ViewProject extends ViewRecord
                                     ->options([
                                         'return_hub' => '🏢 Return to Central Hub',
                                         'transfer' => '🚚 Transfer to Another Project',
-                                        'keep' => '❌ Keep at Project (Write-off)',
                                     ])
                                     ->default('return_hub')
                                     ->required()
@@ -625,7 +623,7 @@ class ViewProject extends ViewRecord
 
                         // Update project status
                         $this->record->update([
-                            'status' => 'Completed',
+                            'status' => 'completed',
                             'end_date' => today(),
                         ]);
 
@@ -640,7 +638,7 @@ class ViewProject extends ViewRecord
                         Notification::make()
                             ->success()
                             ->title('🎉 Project Completed Successfully!')
-                            ->body($summary . implode(', ', $details) . '. Project status updated to Completed.')
+                            ->body($summary . implode(', ', $details) . '. Project status updated to completed.')
                             ->duration(8000)
                             ->send();
 
