@@ -196,11 +196,13 @@ class ResourceResource extends Resource
                             if (!empty($data['notes'])) $metadata['notes'] = $data['notes'];
                             
                             $service->recordPurchase(
-                                $record->id,
+                                $record,
                                 $data['quantity'],
                                 $data['unit_price'],
-                                \Carbon\Carbon::parse($data['transaction_date']),
-                                json_encode($metadata)
+                                \Carbon\Carbon::parse($data['transaction_date'])->format('Y-m-d'),
+                                $metadata['supplier'] ?? null,
+                                $metadata['invoice_number'] ?? null,
+                                $metadata['notes'] ?? null
                             );
                             
                             Notification::make()
@@ -253,10 +255,10 @@ class ResourceResource extends Resource
                             if (!empty($data['notes'])) $metadata['notes'] = $data['notes'];
                             
                             $service->recordAllocation(
-                                $record->id,
-                                $data['project_id'],
+                                $record,
+                                Project::find($data['project_id']),
                                 $data['quantity'],
-                                \Carbon\Carbon::parse($data['transaction_date']),
+                                \Carbon\Carbon::parse($data['transaction_date'])->format('Y-m-d'),
                                 !empty($metadata) ? json_encode($metadata) : null
                             );
                             

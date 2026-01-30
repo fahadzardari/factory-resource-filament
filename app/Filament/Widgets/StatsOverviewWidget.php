@@ -18,30 +18,61 @@ class StatsOverviewWidget extends BaseWidget
         $activeProjects = Project::where('status', 'Active')->count();
         $completedProjects = Project::where('status', 'Completed')->count();
         
-        // Calculate total inventory value from transactions (ledger-based)
-        $totalInventoryValue = InventoryTransaction::whereNull('project_id')
+        // Calculate total hub inventory value (ledger-based)
+        $hubInventoryValue = InventoryTransaction::whereNull('project_id')
+            ->sum(DB::raw('quantity * unit_price'));
+        
+        // Calculate total allocated value (inventory at all project sites)
+        $allocatedValue = InventoryTransaction::whereNotNull('project_id')
             ->sum(DB::raw('quantity * unit_price'));
         
         // Count recent transactions
         $todayTransactions = InventoryTransaction::whereDate('transaction_date', today())->count();
+        $weekTransactions = InventoryTransaction::whereBetween('transaction_date', [
+            now()->startOfWeek(),
+            now()->endOfWeek()
+        ])->count();
+        
+        // Get low stock resources (hub stock < 100 units)
+        $lowStockCount = ResourceModel::whereHas('inventoryTransactions', function ($query) {
+            $query->whereNull('project_id');
+        })
+        ->get()
+        ->filter(function ($resource) {
+            return $resource->hub_stock < 100;
+        })
+        ->count();
         
         return [
-            Stat::make('Total Resources', $totalResources)
-                ->description('Unique items in catalog')
-                ->descriptionIcon('heroicon-o-cube')
-                ->color('primary'),
-            Stat::make('Today\'s Transactions', $todayTransactions)
-                ->description('Inventory movements today')
-                ->descriptionIcon('heroicon-o-clipboard-document-list')
+            Stat::make('Hub Inventory Value', 'PKR ' . number_format($hubInventoryValue, 2))
+                ->description('Central warehouse value')
+                ->descriptionIcon('heroicon-o-building-storefront')
+                ->color('success'),
+            
+            Stat::make('Allocated Inventory', 'PKR ' . number_format($allocatedValue, 2))
+                ->description('Value at project sites')
+                ->descriptionIcon('heroicon-o-truck')
                 ->color('info'),
-            Stat::make('Total Projects', $totalProjects)
-                ->description($activeProjects . ' active, ' . $completedProjects . ' completed')
+            
+            Stat::make('Active Projects', $activeProjects)
+                ->description($completedProjects . ' completed, ' . $totalProjects . ' total')
                 ->descriptionIcon('heroicon-o-briefcase')
-                ->color('success'),
-            Stat::make('Hub Inventory Value', '$' . number_format($totalInventoryValue, 2))
-                ->description('Ledger-based valuation')
-                ->descriptionIcon('heroicon-o-currency-dollar')
-                ->color('success'),
+                ->color('warning'),
+            
+            Stat::make('Total Resources', $totalResources)
+                ->description($lowStockCount > 0 ? $lowStockCount . ' low stock items' : 'All items in stock')
+                ->descriptionIcon('heroicon-o-cube')
+                ->color($lowStockCount > 0 ? 'danger' : 'primary'),
+            
+            Stat::make('Today\'s Transactions', $todayTransactions)
+                ->description($weekTransactions . ' this week')
+                ->descriptionIcon('heroicon-o-arrow-trending-up')
+                ->color('primary'),
+            
+            Stat::make('Total Transactions', InventoryTransaction::count())
+                ->description('All time ledger entries')
+                ->descriptionIcon('heroicon-o-document-text')
+                ->color('gray'),
         ];
     }
 }

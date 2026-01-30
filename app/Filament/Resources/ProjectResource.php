@@ -86,10 +86,11 @@ class ProjectResource extends Resource
                     ->sortable(),
                 Tables\Columns\TextColumn::make('status')
                     ->badge()
-                    ->color(fn (string $state): string => match ($state) {
-                        'Pending' => 'gray',
-                        'Active' => 'success',
-                        'Completed' => 'info',
+                    ->color(fn (string $state): string => match (strtolower($state)) {
+                        'pending' => 'gray',
+                        'active' => 'success',
+                        'completed' => 'info',
+                        default => 'gray',
                     })
                     ->sortable(),
                 Tables\Columns\TextColumn::make('start_date')
@@ -149,10 +150,10 @@ class ProjectResource extends Resource
                             if (!empty($data['notes'])) $metadata['notes'] = $data['notes'];
                             
                             $service->recordConsumption(
-                                $data['resource_id'],
-                                $record->id,
+                                ResourceModel::find($data['resource_id']),
+                                $record,
                                 $data['quantity'],
-                                \Carbon\Carbon::parse($data['transaction_date']),
+                                \Carbon\Carbon::parse($data['transaction_date'])->format('Y-m-d'),
                                 !empty($metadata) ? json_encode($metadata) : null
                             );
                             
@@ -216,11 +217,11 @@ class ProjectResource extends Resource
                             if (!empty($data['notes'])) $metadata['notes'] = $data['notes'];
                             
                             $service->recordTransfer(
-                                $data['resource_id'],
-                                $record->id,
-                                $data['to_project_id'],
+                                ResourceModel::find($data['resource_id']),
+                                $record,
+                                Project::find($data['to_project_id']),
                                 $data['quantity'],
-                                \Carbon\Carbon::parse($data['transaction_date']),
+                                \Carbon\Carbon::parse($data['transaction_date'])->format('Y-m-d'),
                                 !empty($metadata) ? json_encode($metadata) : null
                             );
                             
