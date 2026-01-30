@@ -140,12 +140,15 @@ class ResourceResource extends Resource
                     ->sortable()
                     ->copyable()
                     ->copyMessage('SKU copied!')
-                    ->weight(FontWeight::Bold),
+                    ->weight(FontWeight::Bold)
+                    ->width('150px')
+                    ->limit(20),
                 Tables\Columns\TextColumn::make('name')
                     ->searchable()
                     ->sortable()
                     ->wrap()
-                    ->description(fn ($record) => $record->description ? Str::limit($record->description, 50) : null),
+                    ->description(fn ($record) => $record->description ? Str::limit($record->description, 50) : null)
+                    ->width('250px'),
                 Tables\Columns\TextColumn::make('category')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
@@ -156,19 +159,22 @@ class ResourceResource extends Resource
                         default => 'gray',
                     })
                     ->searchable()
-                    ->sortable(),
+                    ->sortable()
+                    ->width('180px'),
                 Tables\Columns\TextColumn::make('base_unit')
                     ->label('Unit')
                     ->sortable()
                     ->badge()
-                    ->color('gray'),
+                    ->color('gray')
+                    ->width('100px'),
                 Tables\Columns\TextColumn::make('hub_stock')
                     ->label('Hub Stock')
                     ->numeric(decimalPlaces: 2)
                     ->sortable()
                     ->color(fn ($state) => $state > 0 ? 'success' : 'danger')
                     ->weight(FontWeight::Bold)
-                    ->description(fn ($record) => 'At central hub'),
+                    ->description(fn ($record) => 'At central hub')
+                    ->width('150px'),
                 Tables\Columns\TextColumn::make('weighted_avg_price')
                     ->label('Avg Price')
                     ->money('USD')
@@ -211,62 +217,125 @@ class ResourceResource extends Resource
                     ->label('Purchase')
                     ->icon('heroicon-o-shopping-cart')
                     ->color('success')
+                    ->modalHeading('🛒 Record New Purchase')
+                    ->modalDescription('Add newly purchased materials to the Central Hub inventory.')
                     ->form([
-                        Forms\Components\TextInput::make('quantity')
-                            ->required()
-                            ->numeric()
-                            ->minValue(0.01)
-                            ->label('Quantity')
-                            ->suffix(fn ($record) => $record->base_unit),
+                        Forms\Components\Placeholder::make('info')
+                            ->content('📦 Record materials you have purchased and received. This will increase the Hub inventory.')
+                            ->columnSpanFull(),
+                        
+                        Forms\Components\Grid::make(2)
+                            ->schema([
+                                Forms\Components\TextInput::make('quantity')
+                                    ->label('Quantity Purchased')
+                                    ->helperText('How much did you buy?')
+                                    ->numeric()
+                                    ->required()
+                                    ->minValue(0.01)
+                                    ->reactive()
+                                    ->columnSpan(1),
+                                
+                                Forms\Components\Select::make('purchase_unit')
+                                    ->label('Purchase Unit')
+                                    ->helperText('Unit you purchased in')
+                                    ->options(function ($record) {
+                                        return static::getUnitConversionOptions($record->base_unit);
+                                    })
+                                    ->default(fn ($record) => $record->base_unit)
+                                    ->required()
+                                    ->reactive()
+                                    ->searchable()
+                                    ->columnSpan(1),
+                            ]),
+                        
+                        Forms\Components\Placeholder::make('conversion_info')
+                            ->content(function ($get, $record) {
+                                $quantity = $get('quantity') ?? 0;
+                                $purchaseUnit = $get('purchase_unit') ?? $record->base_unit;
+                                $baseUnit = $record->base_unit;
+                                
+                                if ($quantity && $purchaseUnit) {
+                                    $conversion = static::getConversionFactor($purchaseUnit, $baseUnit);
+                                    $convertedQty = $quantity * $conversion;
+                                    
+                                    if ($conversion != 1) {
+                                        return "📊 **Conversion:** {$quantity} {$purchaseUnit} = " . number_format($convertedQty, 2) . " {$baseUnit} (stored in inventory)";
+                                    } else {
+                                        return "✅ No conversion needed - purchasing in base unit";
+                                    }
+                                }
+                                return '';
+                            })
+                            ->visible(fn ($get) => $get('quantity') && $get('purchase_unit'))
+                            ->columnSpanFull(),
+                        
                         Forms\Components\TextInput::make('unit_price')
-                            ->required()
+                            ->label('Price per Unit')
+                            ->helperText(fn ($get, $record) => 'Cost for one ' . ($get('purchase_unit') ?? $record->base_unit))
                             ->numeric()
-                            ->minValue(0.01)
-                            ->prefix('$')
-                            ->label('Unit Price'),
-                        Forms\Components\DatePicker::make('transaction_date')
                             ->required()
-                            ->default(now())
+                            ->minValue(0)
+                            ->prefix('AED'),
+                        
+                        Forms\Components\DatePicker::make('transaction_date')
                             ->label('Purchase Date')
-                            ->maxDate(now()),
+                            ->helperText('When did you receive this?')
+                            ->required()
+                            ->default(today())
+                            ->maxDate(today()),
+                        
                         Forms\Components\TextInput::make('supplier')
-                            ->maxLength(255)
-                            ->label('Supplier Name'),
+                            ->label('Supplier Name (Optional)')
+                            ->placeholder('ABC Building Materials LLC')
+                            ->maxLength(255),
+                        
                         Forms\Components\TextInput::make('invoice_number')
-                            ->maxLength(255)
-                            ->label('Invoice #'),
+                            ->label('Invoice # (Optional)')
+                            ->placeholder('INV-2026-001234')
+                            ->maxLength(255),
+                        
                         Forms\Components\Textarea::make('notes')
-                            ->maxLength(1000)
+                            ->label('Notes (Optional)')
+                            ->placeholder('Any additional details')
                             ->rows(3),
                     ])
                     ->action(function (ResourceModel $record, array $data) {
                         $service = app(InventoryTransactionService::class);
                         
                         try {
-                            $metadata = [];
-                            if (!empty($data['supplier'])) $metadata['supplier'] = $data['supplier'];
-                            if (!empty($data['invoice_number'])) $metadata['invoice_number'] = $data['invoice_number'];
-                            if (!empty($data['notes'])) $metadata['notes'] = $data['notes'];
+                            // Convert quantity to base unit
+                            $purchaseUnit = $data['purchase_unit'] ?? $record->base_unit;
+                            $conversionFactor = static::getConversionFactor($purchaseUnit, $record->base_unit);
+                            $quantityInBaseUnit = $data['quantity'] * $conversionFactor;
+                            
+                            // Calculate price per base unit
+                            $pricePerBaseUnit = $data['unit_price'] / $conversionFactor;
+                            
+                            // Add conversion info to notes if converted
+                            $notes = $data['notes'] ?? '';
+                            if ($conversionFactor != 1) {
+                                $notes .= ($notes ? "\n" : "") . "Purchased as: {$data['quantity']} {$purchaseUnit} (converted to " . number_format($quantityInBaseUnit, 2) . " {$record->base_unit})";
+                            }
                             
                             $service->recordPurchase(
                                 $record,
-                                $data['quantity'],
-                                $data['unit_price'],
+                                $quantityInBaseUnit,
+                                $pricePerBaseUnit,
                                 \Carbon\Carbon::parse($data['transaction_date'])->format('Y-m-d'),
-                                $metadata['supplier'] ?? null,
-                                $metadata['invoice_number'] ?? null,
-                                $metadata['notes'] ?? null
+                                $data['supplier'] ?? null,
+                                $data['invoice_number'] ?? null,
+                                $notes ?: null
                             );
                             
                             Notification::make()
                                 ->success()
-                                ->title('Purchase Recorded')
-                                ->body("Added {$data['quantity']} {$record->base_unit} of {$record->name} to hub inventory.")
+                                ->title('✅ Purchase Recorded!')
+                                ->body("Added {$data['quantity']} {$purchaseUnit}" . ($conversionFactor != 1 ? " (" . number_format($quantityInBaseUnit, 2) . " {$record->base_unit})" : "") . " of {$record->name} to Hub inventory.")
                                 ->send();
                         } catch (\Exception $e) {
                             Notification::make()
                                 ->danger()
-                                ->title('Purchase Failed')
+                                ->title('❌ Purchase Failed')
                                 ->body($e->getMessage())
                                 ->send();
                         }
@@ -366,5 +435,299 @@ class ResourceResource extends Resource
             'view' => Pages\ViewResource::route('/{record}'),
             'edit' => Pages\EditResource::route('/{record}/edit'),
         ];
+    }
+
+    /**
+     * Get available unit conversion options based on base unit
+     */
+    protected static function getUnitConversionOptions(string $baseUnit): array
+    {
+        // Define conversion options for different base units
+        $conversionMap = [
+            // Weight units
+            'kg' => [
+                'kg' => 'Kilograms (kg) - Base Unit',
+                'g' => 'Grams (g)',
+                'mg' => 'Milligrams (mg)',
+                'ton' => 'Metric Tons (ton)',
+                'lb' => 'Pounds (lb)',
+                'oz' => 'Ounces (oz)',
+            ],
+            'g' => [
+                'g' => 'Grams (g) - Base Unit',
+                'kg' => 'Kilograms (kg)',
+                'mg' => 'Milligrams (mg)',
+                'ton' => 'Metric Tons (ton)',
+                'lb' => 'Pounds (lb)',
+                'oz' => 'Ounces (oz)',
+            ],
+            'ton' => [
+                'ton' => 'Metric Tons (ton) - Base Unit',
+                'kg' => 'Kilograms (kg)',
+                'g' => 'Grams (g)',
+                'lb' => 'Pounds (lb)',
+            ],
+            'lb' => [
+                'lb' => 'Pounds (lb) - Base Unit',
+                'kg' => 'Kilograms (kg)',
+                'oz' => 'Ounces (oz)',
+                'ton' => 'Metric Tons (ton)',
+            ],
+            
+            // Volume units
+            'liter' => [
+                'liter' => 'Liters (L) - Base Unit',
+                'ml' => 'Milliliters (ml)',
+                'gallon' => 'Gallons (gal)',
+                'm3' => 'Cubic Meters (m³)',
+            ],
+            'liters' => [
+                'liters' => 'Liters (L) - Base Unit',
+                'ml' => 'Milliliters (ml)',
+                'gallon' => 'Gallons (gal)',
+                'm3' => 'Cubic Meters (m³)',
+            ],
+            'ml' => [
+                'ml' => 'Milliliters (ml) - Base Unit',
+                'liter' => 'Liters (L)',
+                'liters' => 'Liters (L)',
+                'gallon' => 'Gallons (gal)',
+            ],
+            'm3' => [
+                'm3' => 'Cubic Meters (m³) - Base Unit',
+                'liter' => 'Liters (L)',
+                'liters' => 'Liters (L)',
+                'gallon' => 'Gallons (gal)',
+            ],
+            'gallon' => [
+                'gallon' => 'Gallons (gal) - Base Unit',
+                'liter' => 'Liters (L)',
+                'liters' => 'Liters (L)',
+                'ml' => 'Milliliters (ml)',
+            ],
+            
+            // Length units
+            'm' => [
+                'm' => 'Meters (m) - Base Unit',
+                'cm' => 'Centimeters (cm)',
+                'mm' => 'Millimeters (mm)',
+                'km' => 'Kilometers (km)',
+                'ft' => 'Feet (ft)',
+                'inch' => 'Inches (in)',
+            ],
+            'cm' => [
+                'cm' => 'Centimeters (cm) - Base Unit',
+                'm' => 'Meters (m)',
+                'mm' => 'Millimeters (mm)',
+                'ft' => 'Feet (ft)',
+                'inch' => 'Inches (in)',
+            ],
+            'mm' => [
+                'mm' => 'Millimeters (mm) - Base Unit',
+                'm' => 'Meters (m)',
+                'cm' => 'Centimeters (cm)',
+                'inch' => 'Inches (in)',
+            ],
+            'ft' => [
+                'ft' => 'Feet (ft) - Base Unit',
+                'm' => 'Meters (m)',
+                'cm' => 'Centimeters (cm)',
+                'inch' => 'Inches (in)',
+            ],
+            'inch' => [
+                'inch' => 'Inches (in) - Base Unit',
+                'm' => 'Meters (m)',
+                'cm' => 'Centimeters (cm)',
+                'ft' => 'Feet (ft)',
+            ],
+            
+            // Area units
+            'sqm' => [
+                'sqm' => 'Square Meters (m²) - Base Unit',
+                'sqft' => 'Square Feet (ft²)',
+                'sqcm' => 'Square Centimeters (cm²)',
+            ],
+            'sqft' => [
+                'sqft' => 'Square Feet (ft²) - Base Unit',
+                'sqm' => 'Square Meters (m²)',
+            ],
+            'sqcm' => [
+                'sqcm' => 'Square Centimeters (cm²) - Base Unit',
+                'sqm' => 'Square Meters (m²)',
+            ],
+            
+            // Count/Piece units
+            'piece' => [
+                'piece' => 'Pieces - Base Unit',
+                'dozen' => 'Dozen (12 pieces)',
+                'box' => 'Box',
+                'carton' => 'Carton',
+                'pallet' => 'Pallet',
+                'bundle' => 'Bundle',
+                'set' => 'Set',
+                'pair' => 'Pair (2 pieces)',
+            ],
+            'pieces' => [
+                'pieces' => 'Pieces - Base Unit',
+                'dozen' => 'Dozen (12 pieces)',
+                'box' => 'Box',
+                'carton' => 'Carton',
+                'pallet' => 'Pallet',
+                'bundle' => 'Bundle',
+                'set' => 'Set',
+                'pair' => 'Pair (2 pieces)',
+            ],
+            'unit' => [
+                'unit' => 'Units - Base Unit',
+                'dozen' => 'Dozen (12 units)',
+                'box' => 'Box',
+                'carton' => 'Carton',
+            ],
+            'dozen' => [
+                'dozen' => 'Dozen - Base Unit',
+                'piece' => 'Pieces',
+                'pieces' => 'Pieces',
+            ],
+            'box' => [
+                'box' => 'Box - Base Unit',
+                'carton' => 'Carton',
+                'pallet' => 'Pallet',
+            ],
+            'carton' => [
+                'carton' => 'Carton - Base Unit',
+                'box' => 'Box',
+                'pallet' => 'Pallet',
+            ],
+            'pallet' => [
+                'pallet' => 'Pallet - Base Unit',
+                'box' => 'Box',
+                'carton' => 'Carton',
+            ],
+            
+            // Construction-specific
+            'bag' => [
+                'bag' => 'Bags - Base Unit',
+                'ton' => 'Metric Tons',
+                'kg' => 'Kilograms',
+            ],
+            'sack' => [
+                'sack' => 'Sacks - Base Unit',
+                'ton' => 'Metric Tons',
+                'kg' => 'Kilograms',
+            ],
+            
+            // Other common units
+            'roll' => [
+                'roll' => 'Rolls - Base Unit',
+                'dozen' => 'Dozen Rolls',
+            ],
+            'sheet' => [
+                'sheet' => 'Sheets - Base Unit',
+                'dozen' => 'Dozen Sheets',
+                'bundle' => 'Bundle',
+            ],
+            'panel' => [
+                'panel' => 'Panels - Base Unit',
+                'dozen' => 'Dozen Panels',
+                'bundle' => 'Bundle',
+            ],
+            'tile' => [
+                'tile' => 'Tiles - Base Unit',
+                'box' => 'Box',
+                'carton' => 'Carton',
+                'sqm' => 'Square Meters (coverage)',
+            ],
+            'bundle' => [
+                'bundle' => 'Bundles - Base Unit',
+                'piece' => 'Pieces',
+                'pieces' => 'Pieces',
+            ],
+            'set' => [
+                'set' => 'Sets - Base Unit',
+                'piece' => 'Pieces',
+                'pieces' => 'Pieces',
+            ],
+            'pair' => [
+                'pair' => 'Pairs - Base Unit',
+                'piece' => 'Pieces',
+                'pieces' => 'Pieces',
+            ],
+        ];
+        
+        // Return options for the base unit, or default to just the base unit
+        return $conversionMap[strtolower($baseUnit)] ?? [
+            $baseUnit => $baseUnit . ' - Base Unit',
+        ];
+    }
+
+    /**
+     * Get conversion factor from purchase unit to base unit
+     */
+    protected static function getConversionFactor(string $fromUnit, string $toUnit): float
+    {
+        // Normalize to lowercase
+        $fromUnit = strtolower($fromUnit);
+        $toUnit = strtolower($toUnit);
+        
+        // If same unit, no conversion needed
+        if ($fromUnit === $toUnit) {
+            return 1.0;
+        }
+        
+        // Define conversion factors to base units
+        $conversions = [
+            // Weight conversions (to kg)
+            'kg' => 1.0,
+            'g' => 0.001,
+            'mg' => 0.000001,
+            'ton' => 1000.0,
+            'lb' => 0.453592,
+            'oz' => 0.0283495,
+            
+            // Volume conversions (to liter)
+            'liter' => 1.0,
+            'liters' => 1.0,
+            'ml' => 0.001,
+            'gallon' => 3.78541,
+            'm3' => 1000.0,
+            
+            // Length conversions (to m)
+            'm' => 1.0,
+            'cm' => 0.01,
+            'mm' => 0.001,
+            'km' => 1000.0,
+            'ft' => 0.3048,
+            'inch' => 0.0254,
+            
+            // Area conversions (to sqm)
+            'sqm' => 1.0,
+            'sqft' => 0.092903,
+            'sqcm' => 0.0001,
+            
+            // Count conversions (to piece/unit)
+            'piece' => 1.0,
+            'pieces' => 1.0,
+            'unit' => 1.0,
+            'dozen' => 12.0,
+            'box' => 1.0,
+            'carton' => 1.0,
+            'pallet' => 1.0,
+            'bag' => 1.0,
+            'sack' => 1.0,
+            'bundle' => 1.0,
+            'set' => 1.0,
+            'pair' => 2.0,
+            'roll' => 1.0,
+            'sheet' => 1.0,
+            'panel' => 1.0,
+            'tile' => 1.0,
+        ];
+        
+        // Get conversion factors
+        $fromFactor = $conversions[$fromUnit] ?? 1.0;
+        $toFactor = $conversions[$toUnit] ?? 1.0;
+        
+        // Calculate conversion: from -> base unit -> to unit
+        return $fromFactor / $toFactor;
     }
 }
