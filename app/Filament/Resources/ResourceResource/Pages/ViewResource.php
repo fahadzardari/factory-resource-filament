@@ -263,6 +263,138 @@ class ViewResource extends ViewRecord
                     }
                 }),
 
+            Actions\Action::make('bulk_purchase')
+                ->label('Bulk Purchase')
+                ->icon('heroicon-o-shopping-cart')
+                ->color('success')
+                ->modalHeading('🛒 Bulk Purchase Entry')
+                ->modalDescription(fn () => "Add multiple purchase records for {$this->record->name}")
+                ->modalIcon('heroicon-o-shopping-cart')
+                ->modalWidth('7xl')
+                ->form([
+                    Forms\Components\Placeholder::make('info')
+                        ->content(fn () => "📦 **Quick Entry:** Add multiple purchase records for {$this->record->name} at once. Empty rows will be automatically skipped.")
+                        ->columnSpanFull(),
+                    
+                    Forms\Components\Repeater::make('purchases')
+                        ->schema([
+                            Forms\Components\TextInput::make('quantity')
+                                ->label('Quantity')
+                                ->numeric()
+                                ->required()
+                                ->minValue(0.01)
+                                ->placeholder('100')
+                                ->columnSpan(1),
+                            
+                            Forms\Components\Select::make('purchase_unit')
+                                ->label('Unit')
+                                ->options(function () {
+                                    $baseUnit = $this->record->base_unit;
+                                    return $this->getUnitConversionOptions($baseUnit);
+                                })
+                                ->default(fn () => $this->record->base_unit)
+                                ->required()
+                                ->searchable()
+                                ->columnSpan(1),
+                            
+                            Forms\Components\TextInput::make('unit_price')
+                                ->label('Price/Unit')
+                                ->numeric()
+                                ->required()
+                                ->minValue(0)
+                                ->prefix('AED')
+                                ->placeholder('25.50')
+                                ->columnSpan(1),
+                            
+                            Forms\Components\DatePicker::make('transaction_date')
+                                ->label('Date')
+                                ->required()
+                                ->default(today())
+                                ->maxDate(today())
+                                ->columnSpan(1),
+                            
+                            Forms\Components\TextInput::make('supplier')
+                                ->label('Supplier')
+                                ->placeholder('Optional')
+                                ->columnSpan(1),
+                            
+                            Forms\Components\TextInput::make('invoice_number')
+                                ->label('Invoice #')
+                                ->placeholder('Optional')
+                                ->columnSpan(1),
+                        ])
+                        ->columns(6)
+                        ->defaultItems(5)
+                        ->minItems(1)
+                        ->addActionLabel('➕ Add another purchase')
+                        ->collapsible()
+                        ->cloneable()
+                        ->reorderable(false)
+                        ->columnSpanFull(),
+                ])
+                ->action(function (array $data) {
+                    $service = app(InventoryTransactionService::class);
+                    $purchases = $data['purchases'] ?? [];
+                    
+                    // Filter out empty rows
+                    $purchases = array_filter($purchases, function ($row) {
+                        return !empty($row['quantity']) && !empty($row['unit_price']);
+                    });
+                    
+                    if (empty($purchases)) {
+                        Notification::make()
+                            ->danger()
+                            ->title('No valid purchases')
+                            ->body('Please fill at least one complete row.')
+                            ->send();
+                        return;
+                    }
+                    
+                    try {
+                        $count = 0;
+                        foreach ($purchases as $purchase) {
+                            // Convert quantity to base unit
+                            $purchaseUnit = $purchase['purchase_unit'] ?? $this->record->base_unit;
+                            $conversionFactor = $this->getConversionFactor($purchaseUnit, $this->record->base_unit);
+                            $quantityInBaseUnit = $purchase['quantity'] * $conversionFactor;
+                            
+                            // Calculate price per base unit
+                            $pricePerBaseUnit = $purchase['unit_price'] / $conversionFactor;
+                            
+                            $notes = '';
+                            if ($conversionFactor != 1) {
+                                $notes = "Purchased as: {$purchase['quantity']} {$purchaseUnit} (converted to " . number_format($quantityInBaseUnit, 2) . " {$this->record->base_unit})";
+                            }
+                            
+                            $service->recordPurchase(
+                                $this->record,
+                                $quantityInBaseUnit,
+                                $pricePerBaseUnit,
+                                \Carbon\Carbon::parse($purchase['transaction_date'])->format('Y-m-d'),
+                                $purchase['supplier'] ?? null,
+                                $purchase['invoice_number'] ?? null,
+                                $notes ?: null
+                            );
+                            
+                            $count++;
+                        }
+                        
+                        Notification::make()
+                            ->success()
+                            ->title("✅ Success! {$count} purchase record" . ($count > 1 ? 's' : '') . " created")
+                            ->body("Added to {$this->record->name} inventory at Central Hub.")
+                            ->send();
+                        
+                        $this->refreshFormData(['infolist']);
+                    } catch (\Exception $e) {
+                        Notification::make()
+                            ->danger()
+                            ->title('❌ Bulk Purchase Failed')
+                            ->body($e->getMessage())
+                            ->send();
+                    }
+                }),
+
             Actions\Action::make('allocate')
                 ->label('Allocate to Project')
                 ->icon('heroicon-o-arrow-right-circle')
