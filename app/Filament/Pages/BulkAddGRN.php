@@ -24,6 +24,14 @@ class BulkAddGRN extends Page implements Forms\Contracts\HasForms
 
     public array $grns = [];
 
+    public function mount(): void
+    {
+        // Initialize form with 5 empty rows
+        $this->form->fill([
+            'grns' => array_fill(0, 5, []),
+        ]);
+    }
+
     protected function getFormSchema(): array
     {
         return [
@@ -92,23 +100,7 @@ class BulkAddGRN extends Page implements Forms\Contracts\HasForms
         ];
     }
 
-    protected function getFormActions(): array
-    {
-        return [
-            Forms\Components\Actions\Action::make('save')
-                ->label('✅ Create All GRNs')
-                ->color('success')
-                ->submit('save'),
-            
-            Forms\Components\Actions\Action::make('cancel')
-                ->label('Cancel')
-                ->color('gray')
-                ->url(route('filament.admin.pages.bulk-add-grn'))
-                ->button(false),
-        ];
-    }
-
-    public function save(): void
+    public function submit(): void
     {
         $data = $this->form->getState();
         $grns = $data['grns'] ?? [];

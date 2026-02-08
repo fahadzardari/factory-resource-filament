@@ -298,9 +298,10 @@ class ViewProject extends ViewRecord
                     try {
                         $service->recordConsumption(
                             ResourceModel::find($data['resource_id']),
-                            $this->record,
                             $data['quantity'],
                             \Carbon\Carbon::parse($data['transaction_date'])->format('Y-m-d'),
+                            $this->record,
+                            null,
                             $data['notes'] ?? null
                         );
                         

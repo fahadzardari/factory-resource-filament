@@ -1,14 +1,51 @@
 <x-filament-panels::page>
-    <form wire:submit="save" class="space-y-6">
-        {{ $this->form }}
-        
-        <div class="flex gap-3">
-            <x-filament::button type="submit" color="success">
-                ✅ Create All GRNs
-            </x-filament::button>
-            <x-filament::button.link color="gray" href="{{ route('filament.admin.pages.bulk-add-grn') }}">
-                Cancel
-            </x-filament::button.link>
+    <div class="space-y-6">
+        <!-- Instructions -->
+        <div class="bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950 dark:to-cyan-950 p-6 rounded-lg border border-blue-200 dark:border-blue-800">
+            <h3 class="text-lg font-bold text-blue-900 dark:text-blue-100 mb-2 flex items-center">
+                <span class="mr-2">📦</span> Quick Guide
+            </h3>
+            <ul class="space-y-1 text-blue-800 dark:text-blue-200 text-sm">
+                <li class="flex items-start">
+                    <span class="mr-2">•</span>
+                    <span>Add multiple Goods Receipts at once — no manual entries needed!</span>
+                </li>
+                <li class="flex items-start">
+                    <span class="mr-2">•</span>
+                    <span><strong>Required:</strong> Supplier, Resource, Quantity, Unit Price</span>
+                </li>
+                <li class="flex items-start">
+                    <span class="mr-2">•</span>
+                    <span>Inventory updates automatically when GRNs are created</span>
+                </li>
+                <li class="flex items-start">
+                    <span class="mr-2">•</span>
+                    <span>Empty rows are automatically ignored</span>
+                </li>
+            </ul>
         </div>
-    </form>
+
+        <!-- Form -->
+        <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
+            <form>
+                {{ $this->form }}
+            </form>
+
+            <div class="mt-6 flex items-center gap-3">
+                <x-filament::button 
+                    wire:click="submit" 
+                    wire:loading.attr="disabled"
+                    size="lg"
+                    color="success"
+                >
+                    <span wire:loading.remove>✅ Create All GRNs</span>
+                    <span wire:loading>Processing...</span>
+                </x-filament::button>
+                
+                <span class="text-sm text-gray-500 dark:text-gray-400">
+                    Tip: Use clone button to duplicate similar GRNs
+                </span>
+            </div>
+        </div>
+    </div>
 </x-filament-panels::page>
