@@ -3,6 +3,7 @@
 namespace App\Services;
 
 use App\Models\InventoryTransaction;
+use App\Models\GoodsReceiptNote;
 use App\Models\Resource;
 use App\Models\Project;
 use App\Models\User;
@@ -54,6 +55,39 @@ class InventoryTransactionService
             'supplier' => $supplier,
             'invoice_number' => $invoiceNumber,
             'notes' => $notes,
+            'created_by' => $user?->id ?? Auth::id(),
+        ]);
+    }
+
+    /**
+     * Record Goods Received from GRN
+     * Creates GOODS_RECEIPT transaction and links to GRN
+     * Automatically called when GRN is created
+     *
+     * @param GoodsReceiptNote $grn
+     * @param User|null $user
+     * @return InventoryTransaction
+     */
+    public function recordGoodsReceipt(
+        GoodsReceiptNote $grn,
+        ?User $user = null
+    ): InventoryTransaction {
+        // Validate GRN has required fields
+        if (!$grn->resource_id || !$grn->supplier_id || $grn->quantity_received <= 0) {
+            throw new InvalidArgumentException('GRN must have resource, supplier, and positive quantity.');
+        }
+
+        return InventoryTransaction::create([
+            'resource_id' => $grn->resource_id,
+            'project_id' => null, // Always to Hub
+            'transaction_type' => InventoryTransaction::TYPE_GOODS_RECEIPT,
+            'quantity' => $grn->quantity_received,
+            'unit_price' => $grn->unit_price,
+            'total_value' => $grn->total_value,
+            'transaction_date' => $grn->receipt_date,
+            'supplier' => $grn->supplier->name,
+            'grn_id' => $grn->id, // Link to GRN record
+            'notes' => $grn->notes,
             'created_by' => $user?->id ?? Auth::id(),
         ]);
     }
@@ -134,26 +168,24 @@ class InventoryTransactionService
     }
 
     /**
-     * Record consumption of stock at a project
+     * Record consumption of stock at a project or directly from hub
      * Stock is "destroyed" - it leaves the system permanently
      *
      * @param Resource $resource
-     * @param Project $project
      * @param float $quantity (in base unit)
      * @param string $transaction_date
-     * @param string|null $reference_type
-     * @param int|null $reference_id
+     * @param Project|null $project (null = direct consumption from hub, not project-specific)
+     * @param string|null $reason (e.g., "Maintenance", "Testing", "Scrap", custom text)
      * @param string|null $notes
      * @param User|null $user
      * @return InventoryTransaction
      */
     public function recordConsumption(
         Resource $resource,
-        Project $project,
         float $quantity,
         string $transactionDate,
-        ?string $referenceType = null,
-        ?int $referenceId = null,
+        ?Project $project = null,
+        ?string $reason = null,
         ?string $notes = null,
         ?User $user = null
     ): InventoryTransaction {
@@ -161,27 +193,40 @@ class InventoryTransactionService
             throw new InvalidArgumentException('Consumption quantity must be positive.');
         }
 
-        // Check project has sufficient stock
-        $projectStock = $this->getCurrentStock($resource, $project->id);
-        if ($projectStock < $quantity) {
+        // Check sufficient stock at location
+        $projectId = $project?->id;
+        $currentStock = $this->getCurrentStock($resource, $projectId);
+        if ($currentStock < $quantity) {
+            $location = $projectId ? "project" : "hub";
             throw new InvalidArgumentException(
-                "Insufficient stock at project. Available: {$projectStock}, Requested: {$quantity}"
+                "Insufficient stock at {$location}. Available: {$currentStock}, Requested: {$quantity}"
             );
         }
 
-        // Get weighted average price from project
-        $weightedAvgPrice = $this->getWeightedAveragePrice($resource, $project->id);
+        // Get weighted average price from location
+        $weightedAvgPrice = $this->getWeightedAveragePrice($resource, $projectId);
+
+        // Determine transaction type
+        $transactionType = $projectId 
+            ? InventoryTransaction::TYPE_CONSUMPTION
+            : InventoryTransaction::TYPE_DIRECT_CONSUMPTION;
+
+        // Build consumption notes
+        if ($reason && !$notes) {
+            $notes = "Reason: {$reason}";
+        } elseif ($reason && $notes) {
+            $notes = "Reason: {$reason} | {$notes}";
+        }
 
         return InventoryTransaction::create([
             'resource_id' => $resource->id,
-            'project_id' => $project->id,
-            'transaction_type' => InventoryTransaction::TYPE_CONSUMPTION,
+            'project_id' => $projectId, // null for direct, or project id
+            'transaction_type' => $transactionType,
             'quantity' => -$quantity, // Negative (leaving system)
             'unit_price' => $weightedAvgPrice,
             'total_value' => -($quantity * $weightedAvgPrice),
             'transaction_date' => $transactionDate,
-            'reference_type' => $referenceType,
-            'reference_id' => $referenceId,
+            'consumption_reason' => $reason,
             'notes' => $notes,
             'created_by' => $user?->id ?? Auth::id(),
         ]);

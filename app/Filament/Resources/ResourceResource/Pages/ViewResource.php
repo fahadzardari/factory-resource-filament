@@ -134,6 +134,9 @@ class ViewResource extends ViewRecord
     protected function getHeaderActions(): array
     {
         return [
+            // DEPRECATED: Purchase action - Use Goods Receipt Notes (GRN) instead
+            // Commenting out to hide from UI
+            /*
             Actions\Action::make('purchase')
                 ->label('Purchase')
                 ->icon('heroicon-o-shopping-cart')
@@ -262,7 +265,11 @@ class ViewResource extends ViewRecord
                             ->send();
                     }
                 }),
+            */
 
+            // DEPRECATED: Bulk Purchase action - Use GRN Bulk Import instead
+            // Commenting out to hide from UI
+            /*
             Actions\Action::make('bulk_purchase')
                 ->label('Bulk Purchase')
                 ->icon('heroicon-o-shopping-cart')
@@ -394,6 +401,7 @@ class ViewResource extends ViewRecord
                             ->send();
                     }
                 }),
+            */
 
             Actions\Action::make('allocate')
                 ->label('Allocate to Project')

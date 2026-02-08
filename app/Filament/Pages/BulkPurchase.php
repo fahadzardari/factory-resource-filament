@@ -18,12 +18,15 @@ class BulkPurchase extends Page implements Forms\Contracts\HasForms
 {
     use Forms\Concerns\InteractsWithForms;
 
-    protected static ?string $navigationIcon = 'heroicon-o-shopping-cart';
-    protected static ?string $navigationLabel = '🛒 Bulk Purchases';
-    protected static ?int $navigationSort = 20;
-    protected static ?string $navigationGroup = 'Inventory';
+    // DEPRECATED: Bulk Purchase page - Using GRN system instead
+    // Commenting out navigation to hide from sidebar
+    // protected static ?string $navigationIcon = 'heroicon-o-shopping-cart';
+    // protected static ?string $navigationLabel = '🛒 Bulk Purchases';
+    // protected static ?int $navigationSort = 20;
+    // protected static ?string $navigationGroup = 'Inventory';
+    protected static bool $shouldRegisterNavigation = false;
     protected static string $view = 'filament.pages.bulk-purchase';
-    protected static ?string $title = 'Bulk Purchase Entry';
+    protected static ?string $title = 'Bulk Purchase Entry (DEPRECATED)';
 
     public $rows = [];
 

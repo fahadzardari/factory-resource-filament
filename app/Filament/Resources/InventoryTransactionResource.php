@@ -65,12 +65,15 @@ class InventoryTransactionResource extends Resource
                     ->label('Type')
                     ->badge()
                     ->color(fn (string $state): string => match ($state) {
-                        'PURCHASE' => 'success',
+                        'GOODS_RECEIPT' => 'success',
+                        'PURCHASE' => 'gray',
+                        'DIRECT_CONSUMPTION' => 'danger',
                         'ALLOCATION_OUT' => 'warning',
                         'ALLOCATION_IN' => 'info',
                         'CONSUMPTION' => 'danger',
                         'TRANSFER_OUT' => 'gray',
                         'TRANSFER_IN' => 'primary',
+                        'ADJUSTMENT' => 'secondary',
                         default => 'secondary',
                     })
                     ->formatStateUsing(fn (string $state): string => 
@@ -124,12 +127,15 @@ class InventoryTransactionResource extends Resource
                 Tables\Filters\SelectFilter::make('transaction_type')
                     ->label('Transaction Type')
                     ->options([
-                        'PURCHASE' => 'Purchase',
+                        'GOODS_RECEIPT' => 'Goods Receipt (GRN)',
+                        'DIRECT_CONSUMPTION' => 'Direct Consumption',
                         'ALLOCATION_OUT' => 'Allocation Out',
                         'ALLOCATION_IN' => 'Allocation In',
-                        'CONSUMPTION' => 'Consumption',
+                        'CONSUMPTION' => 'Project Consumption',
                         'TRANSFER_OUT' => 'Transfer Out',
                         'TRANSFER_IN' => 'Transfer In',
+                        'ADJUSTMENT' => 'Adjustment',
+                        'PURCHASE' => 'Purchase (Legacy)',
                     ]),
                 Tables\Filters\Filter::make('transaction_date')
                     ->form([
@@ -176,12 +182,15 @@ class InventoryTransactionResource extends Resource
                             ->label('Type')
                             ->badge()
                             ->color(fn (string $state): string => match ($state) {
-                                'PURCHASE' => 'success',
+                                'GOODS_RECEIPT' => 'success',
+                                'PURCHASE' => 'gray',
+                                'DIRECT_CONSUMPTION' => 'danger',
                                 'ALLOCATION_OUT' => 'warning',
                                 'ALLOCATION_IN' => 'info',
                                 'CONSUMPTION' => 'danger',
                                 'TRANSFER_OUT' => 'gray',
                                 'TRANSFER_IN' => 'primary',
+                                'ADJUSTMENT' => 'secondary',
                                 default => 'secondary',
                             }),
                         Infolists\Components\TextEntry::make('resource.name')

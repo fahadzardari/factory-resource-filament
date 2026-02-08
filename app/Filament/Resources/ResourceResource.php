@@ -39,7 +39,7 @@ class ResourceResource extends Resource
         return $form
             ->schema([
                 Forms\Components\Section::make('Basic Information')
-                    ->description('Core resource details. The SKU must be unique across all resources.')
+                    ->description('Core resource details. The Item Code must be unique across all resources.')
                     ->icon('heroicon-o-information-circle')
                     ->schema([
                         Forms\Components\TextInput::make('name')
@@ -47,11 +47,11 @@ class ResourceResource extends Resource
                             ->maxLength(255)
                             ->helperText('A descriptive name for the resource (e.g., "Portland Cement")'),
                         Forms\Components\TextInput::make('sku')
-                            ->label('SKU')
+                            ->label('Item Code')
                             ->required()
                             ->unique(ignoreRecord: true)
                             ->maxLength(255)
-                            ->helperText('Stock Keeping Unit - unique identifier for tracking'),
+                            ->helperText('Unique identifier code for this item - cannot be changed after creation'),
                         Forms\Components\Select::make('category')
                             ->options([
                                 'Raw Materials' => 'Raw Materials',
@@ -135,11 +135,11 @@ class ResourceResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('sku')
-                    ->label('SKU')
+                    ->label('Item Code')
                     ->searchable()
                     ->sortable()
                     ->copyable()
-                    ->copyMessage('SKU copied!')
+                    ->copyMessage('Item Code copied!')
                     ->weight(FontWeight::Bold)
                     ->width('150px')
                     ->limit(20),
@@ -213,129 +213,61 @@ class ResourceResource extends Resource
                     ),
             ])
             ->actions([
-                Tables\Actions\Action::make('purchase')
-                    ->label('Purchase')
-                    ->icon('heroicon-o-shopping-cart')
-                    ->color('success')
-                    ->modalHeading('🛒 Record New Purchase')
-                    ->modalDescription('Add newly purchased materials to the Central Hub inventory.')
+                // DEPRECATED: Purchase action - Use Goods Receipt Notes (GRN) instead
+                // The old Purchase system is hidden from UI but kept in ledger for historical data
+                
+                Tables\Actions\Action::make('consume')
+                    ->label('Direct Consume')
+                    ->icon('heroicon-o-fire')
+                    ->color('danger')
+                    ->modalHeading('🗑️ Direct Consumption from Hub')
+                    ->modalDescription('Record items consumed directly from hub inventory (e.g., maintenance, testing, waste).')
                     ->form([
                         Forms\Components\Placeholder::make('info')
-                            ->content('📦 Record materials you have purchased and received. This will increase the Hub inventory.')
+                            ->content('⚠️ This records items leaving the hub permanently. Use this for non-project consumptions.')
                             ->columnSpanFull(),
                         
-                        Forms\Components\Grid::make(2)
-                            ->schema([
-                                Forms\Components\TextInput::make('quantity')
-                                    ->label('Quantity Purchased')
-                                    ->helperText('How much did you buy?')
-                                    ->numeric()
-                                    ->required()
-                                    ->minValue(0.01)
-                                    ->reactive()
-                                    ->columnSpan(1),
-                                
-                                Forms\Components\Select::make('purchase_unit')
-                                    ->label('Purchase Unit')
-                                    ->helperText('Unit you purchased in')
-                                    ->options(function ($record) {
-                                        return static::getUnitConversionOptions($record->base_unit);
-                                    })
-                                    ->default(fn ($record) => $record->base_unit)
-                                    ->required()
-                                    ->reactive()
-                                    ->searchable()
-                                    ->columnSpan(1),
-                            ]),
-                        
-                        Forms\Components\Placeholder::make('conversion_info')
-                            ->content(function ($get, $record) {
-                                $quantity = $get('quantity') ?? 0;
-                                $purchaseUnit = $get('purchase_unit') ?? $record->base_unit;
-                                $baseUnit = $record->base_unit;
-                                
-                                if ($quantity && $purchaseUnit) {
-                                    $conversion = static::getConversionFactor($purchaseUnit, $baseUnit);
-                                    $convertedQty = $quantity * $conversion;
-                                    
-                                    if ($conversion != 1) {
-                                        return "📊 **Conversion:** {$quantity} {$purchaseUnit} = " . number_format($convertedQty, 2) . " {$baseUnit} (stored in inventory)";
-                                    } else {
-                                        return "✅ No conversion needed - purchasing in base unit";
-                                    }
-                                }
-                                return '';
-                            })
-                            ->visible(fn ($get) => $get('quantity') && $get('purchase_unit'))
-                            ->columnSpanFull(),
-                        
-                        Forms\Components\TextInput::make('unit_price')
-                            ->label('Price per Unit')
-                            ->helperText(fn ($get, $record) => 'Cost for one ' . ($get('purchase_unit') ?? $record->base_unit))
-                            ->numeric()
+                        Forms\Components\TextInput::make('quantity')
+                            ->label('Quantity to Consume')
                             ->required()
-                            ->minValue(0)
-                            ->prefix('AED'),
+                            ->numeric()
+                            ->minValue(0.01)
+                            ->suffix(fn ($record) => $record->base_unit)
+                            ->helperText(fn ($record) => "Available at hub: {$record->hub_stock} {$record->base_unit}"),
+                        
+                        Forms\Components\TextInput::make('reason')
+                            ->label('Reason / Notes')
+                            ->placeholder('e.g., Maintenance, Testing, Scrap, Quality Check, etc.')
+                            ->maxLength(500),
                         
                         Forms\Components\DatePicker::make('transaction_date')
-                            ->label('Purchase Date')
-                            ->helperText('When did you receive this?')
+                            ->label('Consumption Date')
                             ->required()
-                            ->default(today())
-                            ->maxDate(today()),
-                        
-                        Forms\Components\TextInput::make('supplier')
-                            ->label('Supplier Name (Optional)')
-                            ->placeholder('ABC Building Materials LLC')
-                            ->maxLength(255),
-                        
-                        Forms\Components\TextInput::make('invoice_number')
-                            ->label('Invoice # (Optional)')
-                            ->placeholder('INV-2026-001234')
-                            ->maxLength(255),
-                        
-                        Forms\Components\Textarea::make('notes')
-                            ->label('Notes (Optional)')
-                            ->placeholder('Any additional details')
-                            ->rows(3),
+                            ->default(now())
+                            ->maxDate(now()),
                     ])
                     ->action(function (ResourceModel $record, array $data) {
                         $service = app(InventoryTransactionService::class);
                         
                         try {
-                            // Convert quantity to base unit
-                            $purchaseUnit = $data['purchase_unit'] ?? $record->base_unit;
-                            $conversionFactor = static::getConversionFactor($purchaseUnit, $record->base_unit);
-                            $quantityInBaseUnit = $data['quantity'] * $conversionFactor;
-                            
-                            // Calculate price per base unit
-                            $pricePerBaseUnit = $data['unit_price'] / $conversionFactor;
-                            
-                            // Add conversion info to notes if converted
-                            $notes = $data['notes'] ?? '';
-                            if ($conversionFactor != 1) {
-                                $notes .= ($notes ? "\n" : "") . "Purchased as: {$data['quantity']} {$purchaseUnit} (converted to " . number_format($quantityInBaseUnit, 2) . " {$record->base_unit})";
-                            }
-                            
-                            $service->recordPurchase(
+                            $service->recordConsumption(
                                 $record,
-                                $quantityInBaseUnit,
-                                $pricePerBaseUnit,
+                                $data['quantity'],
                                 \Carbon\Carbon::parse($data['transaction_date'])->format('Y-m-d'),
-                                $data['supplier'] ?? null,
-                                $data['invoice_number'] ?? null,
-                                $notes ?: null
+                                null, // No project - direct consumption
+                                $data['reason'] ?? null,
+                                null
                             );
                             
                             Notification::make()
                                 ->success()
-                                ->title('✅ Purchase Recorded!')
-                                ->body("Added {$data['quantity']} {$purchaseUnit}" . ($conversionFactor != 1 ? " (" . number_format($quantityInBaseUnit, 2) . " {$record->base_unit})" : "") . " of {$record->name} to Hub inventory.")
+                                ->title('Direct Consumption Recorded')
+                                ->body("Consumed {$data['quantity']} {$record->base_unit} of {$record->name} from hub." . ($data['reason'] ? " Reason: {$data['reason']}" : ""))
                                 ->send();
                         } catch (\Exception $e) {
                             Notification::make()
                                 ->danger()
-                                ->title('❌ Purchase Failed')
+                                ->title('Consumption Failed')
                                 ->body($e->getMessage())
                                 ->send();
                         }

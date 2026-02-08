@@ -10,10 +10,12 @@ use InvalidArgumentException;
 class InventoryTransaction extends Model
 {
     // Transaction Types (Enum)
-    const TYPE_PURCHASE = 'PURCHASE';
+    const TYPE_PURCHASE = 'PURCHASE'; // Old system (hidden from UI)
+    const TYPE_GOODS_RECEIPT = 'GOODS_RECEIPT'; // GRN received
     const TYPE_ALLOCATION_OUT = 'ALLOCATION_OUT';
     const TYPE_ALLOCATION_IN = 'ALLOCATION_IN';
-    const TYPE_CONSUMPTION = 'CONSUMPTION';
+    const TYPE_CONSUMPTION = 'CONSUMPTION'; // Project consumption
+    const TYPE_DIRECT_CONSUMPTION = 'DIRECT_CONSUMPTION'; // Hub consumption
     const TYPE_TRANSFER_OUT = 'TRANSFER_OUT';
     const TYPE_TRANSFER_IN = 'TRANSFER_IN';
     const TYPE_ADJUSTMENT = 'ADJUSTMENT';
@@ -31,6 +33,8 @@ class InventoryTransaction extends Model
         'notes',
         'supplier',
         'invoice_number',
+        'grn_id',
+        'consumption_reason',
         'created_by',
     ];
 
@@ -90,6 +94,11 @@ class InventoryTransaction extends Model
     public function reference(): MorphTo
     {
         return $this->morphTo();
+    }
+
+    public function goodsReceiptNote(): BelongsTo
+    {
+        return $this->belongsTo(GoodsReceiptNote::class, 'grn_id');
     }
 
     /**
@@ -165,9 +174,11 @@ class InventoryTransaction extends Model
     {
         return [
             self::TYPE_PURCHASE,
+            self::TYPE_GOODS_RECEIPT,
             self::TYPE_ALLOCATION_OUT,
             self::TYPE_ALLOCATION_IN,
             self::TYPE_CONSUMPTION,
+            self::TYPE_DIRECT_CONSUMPTION,
             self::TYPE_TRANSFER_OUT,
             self::TYPE_TRANSFER_IN,
             self::TYPE_ADJUSTMENT,
