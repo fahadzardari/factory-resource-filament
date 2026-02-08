@@ -20,8 +20,8 @@ class BulkAddProjects extends Page implements Forms\Contracts\HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-folder';
     protected static ?string $navigationLabel = '🏗️ Bulk Add Projects';
-    protected static ?int $navigationSort = 10;
-    protected static ?string $navigationGroup = 'Projects';
+    protected static ?int $navigationSort = 1;
+    protected static ?string $navigationGroup = 'Bulk Operations';
     protected static string $view = 'filament.pages.bulk-add-projects';
     protected static ?string $title = 'Bulk Add Projects';
 

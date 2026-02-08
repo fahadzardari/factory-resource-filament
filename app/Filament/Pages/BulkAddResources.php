@@ -19,8 +19,8 @@ class BulkAddResources extends Page implements Forms\Contracts\HasForms
 
     protected static ?string $navigationIcon = 'heroicon-o-cube';
     protected static ?string $navigationLabel = '📦 Bulk Add Resources';
-    protected static ?int $navigationSort = 10;
-    protected static ?string $navigationGroup = 'Inventory';
+    protected static ?int $navigationSort = 2;
+    protected static ?string $navigationGroup = 'Bulk Operations';
     protected static string $view = 'filament.pages.bulk-add-resources';
     protected static ?string $title = 'Bulk Add Resources';
 

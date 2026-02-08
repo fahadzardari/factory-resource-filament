@@ -19,8 +19,8 @@ class GoodsReceiptNoteResource extends Resource
 
     protected static ?string $navigationIcon = 'heroicon-o-check-circle';
     protected static ?string $navigationLabel = 'Goods Receipts (GRN)';
-    protected static ?string $navigationGroup = 'Purchasing';
-    protected static ?int $navigationSort = 2;
+    protected static ?string $navigationGroup = 'Inventory Management';
+    protected static ?int $navigationSort = 3;
     protected static ?string $recordTitleAttribute = 'grn_number';
 
     public static function form(Form $form): Form
