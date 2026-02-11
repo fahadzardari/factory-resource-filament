@@ -4,6 +4,8 @@ namespace App\Filament\Resources\ResourceResource\Pages;
 
 use App\Filament\Resources\ResourceResource;
 use App\Models\Project;
+use App\Models\Supplier;
+use App\Models\GoodsReceiptNote;
 use App\Services\InventoryTransactionService;
 use App\Exports\ResourceTransactionsExport;
 use Filament\Actions;
@@ -13,6 +15,8 @@ use Filament\Resources\Pages\ViewRecord;
 use Filament\Infolists;
 use Filament\Infolists\Infolist;
 use Maatwebsite\Excel\Facades\Excel;
+use Carbon\Carbon;
+use Illuminate\Support\Facades\Auth;
 
 class ViewResource extends ViewRecord
 {
@@ -511,6 +515,198 @@ class ViewResource extends ViewRecord
                         ),
                         $filename
                     );
+                }),
+
+            Actions\Action::make('add_grn')
+                ->label('Add GRN')
+                ->icon('heroicon-o-document-plus')
+                ->color('success')
+                ->modalHeading('📦 Add Goods Receipt Note (GRN)')
+                ->modalDescription(fn () => "Create a new GRN for {$this->record->name} (SKU: {$this->record->sku})")
+                ->modalIcon('heroicon-o-document-plus')
+                ->modalWidth('2xl')
+                ->form([
+                    Forms\Components\Placeholder::make('info')
+                        ->content(fn () => "📋 Record goods received from a supplier. The quantity can be in any unit and will be converted to {$this->record->base_unit}. The GRN number will be auto-generated.")
+                        ->columnSpanFull(),
+                    
+                    Forms\Components\Select::make('supplier_id')
+                        ->label('Supplier')
+                        ->required()
+                        ->searchable()
+                        ->preload()
+                        ->options(fn () => Supplier::active()->pluck('name', 'id'))
+                        ->placeholder('Select a supplier...')
+                        ->columnSpan(1),
+                    
+                    Forms\Components\TextInput::make('delivery_reference')
+                        ->label('Delivery Reference / PO Number')
+                        ->placeholder('e.g., PO-001 or Invoice #')
+                        ->maxLength(100)
+                        ->columnSpan(1),
+                    
+                    Forms\Components\DatePicker::make('receipt_date')
+                        ->label('Receipt Date')
+                        ->required()
+                        ->default(today())
+                        ->maxDate(today())
+                        ->columnSpan(2),
+                    
+                    Forms\Components\Grid::make(2)
+                        ->schema([
+                            Forms\Components\TextInput::make('quantity_received')
+                                ->label('Quantity Received')
+                                ->required()
+                                ->numeric()
+                                ->minValue(0.001)
+                                ->step(0.001)
+                                ->live()
+                                ->reactive()
+                                ->afterStateUpdated(function ($state, \Filament\Forms\Set $set, \Filament\Forms\Get $get) {
+                                    if ($state && $get('unit_price')) {
+                                        $set('total_value', $state * $get('unit_price'));
+                                    }
+                                })
+                                ->columnSpan(1),
+
+                            Forms\Components\Select::make('receipt_unit')
+                                ->label('Unit of Receipt')
+                                ->required()
+                                ->options($this->getUnitConversionOptions($this->record->base_unit))
+                                ->default($this->record->base_unit)
+                                ->searchable()
+                                ->live()
+                                ->reactive()
+                                ->columnSpan(1),
+                        ]),
+
+                    Forms\Components\Placeholder::make('conversion_info')
+                        ->content(function (\Filament\Forms\Get $get) {
+                            $quantity = $get('quantity_received');
+                            $receiptUnit = $get('receipt_unit');
+                            
+                            if (!$quantity || !$receiptUnit) {
+                                return '📝 Enter quantity and unit to see conversion';
+                            }
+
+                            $baseUnit = $this->record->base_unit;
+                            $conversionFactor = $this->getConversionFactor($receiptUnit, $baseUnit);
+                            $convertedQty = $quantity * $conversionFactor;
+
+                            if ($conversionFactor == 1) {
+                                return "✅ **No conversion needed** - Receiving in base unit ({$baseUnit})";
+                            } else {
+                                return "📊 **Conversion:** {$quantity} {$receiptUnit} = **" . number_format($convertedQty, 3) . " {$baseUnit}** (will be stored in database)";
+                            }
+                        })
+                        ->visible(fn (\Filament\Forms\Get $get) => $get('quantity_received') && $get('receipt_unit'))
+                        ->columnSpanFull(),
+                    
+                    Forms\Components\TextInput::make('unit_price')
+                        ->label('Unit Price')
+                        ->helperText(fn (\Filament\Forms\Get $get) => 'Price per ' . ($get('receipt_unit') ?? $this->record->base_unit))
+                        ->required()
+                        ->numeric()
+                        ->minValue(0)
+                        ->step(0.01)
+                        ->live()
+                        ->reactive()
+                        ->afterStateUpdated(function ($state, \Filament\Forms\Set $set, \Filament\Forms\Get $get) {
+                            $quantity = $get('quantity_received');
+                            if ($quantity && $state) {
+                                $set('total_value', round($quantity * $state, 2));
+                            }
+                        })
+                        ->prefix('AED ')
+                        ->columnSpan(1),
+
+                    Forms\Components\Placeholder::make('conversion_price_info')
+                        ->content(function (\Filament\Forms\Get $get) {
+                            $quantity = $get('quantity_received');
+                            $unitPrice = $get('unit_price');
+                            $receiptUnit = $get('receipt_unit');
+                            
+                            if (!$quantity || !$unitPrice || !$receiptUnit) {
+                                return '';
+                            }
+
+                            $baseUnit = $this->record->base_unit;
+                            $conversionFactor = $this->getConversionFactor($receiptUnit, $baseUnit);
+                            
+                            if ($conversionFactor == 1) {
+                                return "Price per base unit: **AED {$unitPrice}**";
+                            } else {
+                                $pricePerBaseUnit = $unitPrice / $conversionFactor;
+                                return "Price per {$receiptUnit}: **AED {$unitPrice}** → Price per {$baseUnit}: **AED " . number_format($pricePerBaseUnit, 2) . "**";
+                            }
+                        })
+                        ->visible(fn (\Filament\Forms\Get $get) => $get('unit_price') && $get('receipt_unit'))
+                        ->columnSpanFull(),
+
+                    Forms\Components\TextInput::make('total_value')
+                        ->label('Total Value (Receipt Amount)')
+                        ->disabled()
+                        ->numeric()
+                        ->prefix('AED ')
+                        ->step(0.01)
+                        ->columnSpan(1),
+
+                    Forms\Components\Textarea::make('notes')
+                        ->label('Notes / Remarks')
+                        ->placeholder('Any additional notes about this receipt...')
+                        ->maxLength(1000)
+                        ->rows(3)
+                        ->columnSpanFull(),
+                ])
+                ->action(function (array $data) {
+                    try {
+                        // Get the resource to check its base unit
+                        $baseUnit = $this->record->base_unit;
+                        $receiptUnit = $data['receipt_unit'] ?? $baseUnit;
+                        
+                        // Calculate conversion if needed
+                        if (strtolower($receiptUnit) !== strtolower($baseUnit)) {
+                            $conversionFactor = $this->getConversionFactor($receiptUnit, $baseUnit);
+                            $quantity = $data['quantity_received'] * $conversionFactor;
+                            $unitPrice = $data['unit_price'] / $conversionFactor;
+                        } else {
+                            $quantity = $data['quantity_received'];
+                            $unitPrice = $data['unit_price'];
+                        }
+                        
+                        // Create the GRN
+                        $grn = GoodsReceiptNote::create([
+                            'supplier_id' => $data['supplier_id'],
+                            'resource_id' => $this->record->id,
+                            'quantity_received' => round($quantity, 3),
+                            'unit_price' => round($unitPrice, 2),
+                            'total_value' => round($quantity * $unitPrice, 2),
+                            'delivery_reference' => $data['delivery_reference'] ?? null,
+                            'receipt_date' => Carbon::parse($data['receipt_date'])->format('Y-m-d'),
+                            'notes' => $data['notes'] ?? null,
+                            'created_by' => Auth::id(),
+                        ]);
+                        
+                        // Create inventory transaction for the GRN
+                        $service = app(InventoryTransactionService::class);
+                        $service->recordGoodsReceipt($grn, Auth::user());
+                        
+                        $supplier = Supplier::find($data['supplier_id']);
+                        
+                        Notification::make()
+                            ->success()
+                            ->title('✅ GRN Created Successfully!')
+                            ->body("GRN #{$grn->grn_number} - Received {$quantity} {$baseUnit} from {$supplier->name}")
+                            ->send();
+                        
+                        $this->refreshFormData(['infolist']);
+                    } catch (\Exception $e) {
+                        Notification::make()
+                            ->danger()
+                            ->title('❌ Failed to Create GRN')
+                            ->body($e->getMessage())
+                            ->send();
+                    }
                 }),
             
             Actions\EditAction::make(),
