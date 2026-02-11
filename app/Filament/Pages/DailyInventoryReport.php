@@ -46,6 +46,10 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
             Forms\Components\Section::make('Report Filters')
                 ->description('Select date and optionally filter by projects')
                 ->schema([
+                    Forms\Components\Placeholder::make('instructions')
+                        ->content(fn () => view('filament.pages.daily-inventory-report-instructions'))
+                        ->columnSpanFull(),
+
                     Forms\Components\DatePicker::make('report_date')
                         ->label('Report Date')
                         ->required()
@@ -129,6 +133,7 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                     'resource_name' => $resource->name,
                     'item_code' => $resource->sku,
                     'base_unit' => $resource->base_unit,
+                    'projects' => $this->getProjectsForResource($resource->id),
                     'opening_qty' => $openingTxn['qty'],
                     'opening_value' => $openingTxn['value'],
                     'in_qty' => $inQty,
@@ -204,6 +209,20 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
         return $suppliers ?: '-';
     }
 
+    private function getProjectsForResource(int $resourceId): string
+    {
+        $projectNames = InventoryTransaction::where('resource_id', $resourceId)
+            ->distinct()
+            ->with('project')
+            ->get()
+            ->pluck('project.name')
+            ->filter()
+            ->unique()
+            ->join(', ');
+
+        return $projectNames ?: ' ';
+    }
+
     public function downloadExcel()
     {
         if ($this->reportData === null) {
@@ -243,6 +262,7 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                     'Closing Qty',
                     'Avg Price',
                     'Closing Value',
+                    'Projects',
                     'Supplier',
                 ]);
 
@@ -261,6 +281,7 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                         round($item['closing_qty'], 2),
                         round($item['avg_price'], 2),
                         round($item['closing_value'], 2),
+                        $item['projects'],
                         $item['suppliers'],
                     ]);
                 }
@@ -279,6 +300,7 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                     round(collect($this->reportData)->sum('closing_qty'), 2),
                     '',
                     round(collect($this->reportData)->sum('closing_value'), 2),
+                    '',
                     '',
                 ]);
 

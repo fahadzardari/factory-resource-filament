@@ -35,8 +35,8 @@ class GoodsReceiptNoteResource extends Resource
                             ->label('GRN Number')
                             ->disabled()
                             ->dehydrated()
-                            ->default(fn () => 'Auto-generated')
-                            ->helperText('Auto-generated on save'),
+                            ->placeholder('Auto-generated on save')
+                            ->helperText('Format: GRN-YYYY-00000'),
 
                         Forms\Components\DatePicker::make('receipt_date')
                             ->label('Receipt Date')
@@ -103,7 +103,7 @@ class GoodsReceiptNoteResource extends Resource
                                 Forms\Components\Select::make('receipt_unit')
                                     ->label('Unit of Receipt')
                                     ->required()
-                                    ->options(fn ($get) => $this->getUnitOptionsFor($get('resource_id')))
+                                    ->options(fn ($get) => self::getUnitOptionsFor($get('resource_id')))
                                     ->searchable()
                                     ->live()
                                     ->reactive()
@@ -127,7 +127,7 @@ class GoodsReceiptNoteResource extends Resource
                                     }
 
                                     $baseUnit = $resource->base_unit;
-                                    $conversionFactor = $this->getConversionFactor($receiptUnit, $baseUnit);
+                                    $conversionFactor = self::getConversionFactor($receiptUnit, $baseUnit);
                                     $convertedQty = $quantity * $conversionFactor;
 
                                     if ($conversionFactor == 1) {
@@ -177,7 +177,7 @@ class GoodsReceiptNoteResource extends Resource
                                     }
 
                                     $baseUnit = $resource->base_unit;
-                                    $conversionFactor = $this->getConversionFactor($receiptUnit, $baseUnit);
+                                    $conversionFactor = self::getConversionFactor($receiptUnit, $baseUnit);
                                     
                                     if ($conversionFactor == 1) {
                                         return "Price per base unit: AED {$unitPrice}";
@@ -336,7 +336,7 @@ class GoodsReceiptNoteResource extends Resource
     /**
      * Get available unit options for a specific resource based on its base unit
      */
-    protected function getUnitOptionsFor(?int $resourceId): array
+    protected static function getUnitOptionsFor(?int $resourceId): array
     {
         if (!$resourceId) {
             return [];
@@ -349,7 +349,7 @@ class GoodsReceiptNoteResource extends Resource
             }
 
             $baseUnit = $resource->base_unit;
-            return $this->getUnitConversionOptions($baseUnit);
+            return self::getUnitConversionOptions($baseUnit);
         } catch (\Exception $e) {
             Log::error('Error getting unit options: ' . $e->getMessage());
             return [];
@@ -359,7 +359,7 @@ class GoodsReceiptNoteResource extends Resource
     /**
      * Get available unit conversion options based on base unit
      */
-    protected function getUnitConversionOptions(string $baseUnit): array
+    protected static function getUnitConversionOptions(string $baseUnit): array
     {
         $conversionMap = [
             // Weight units
@@ -568,7 +568,7 @@ class GoodsReceiptNoteResource extends Resource
     /**
      * Get conversion factor from one unit to another
      */
-    protected function getConversionFactor(string $fromUnit, string $toUnit): float
+    protected static function getConversionFactor(string $fromUnit, string $toUnit): float
     {
         $fromUnit = strtolower($fromUnit);
         $toUnit = strtolower($toUnit);

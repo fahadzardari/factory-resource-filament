@@ -12,7 +12,11 @@
                 </li>
                 <li class="flex items-start">
                     <span class="mr-2">•</span>
-                    <span><strong>Required:</strong> Supplier, Resource, Quantity, Unit Price</span>
+                    <span><strong>Only fill the rows you need:</strong> Supplier, Resource, Quantity, Unit Price</span>
+                </li>
+                <li class="flex items-start">
+                    <span class="mr-2">•</span>
+                    <span><strong>Empty rows are automatically ignored</strong> — leave blank rows empty, they won't be validated</span>
                 </li>
                 <li class="flex items-start">
                     <span class="mr-2">•</span>
@@ -20,32 +24,31 @@
                 </li>
                 <li class="flex items-start">
                     <span class="mr-2">•</span>
-                    <span>Empty rows are automatically ignored</span>
+                    <span>Click "Create All GRNs" to process only the filled rows</span>
                 </li>
             </ul>
         </div>
 
         <!-- Form -->
         <div class="bg-white dark:bg-gray-800 p-6 rounded-lg shadow-sm border border-gray-200 dark:border-gray-700">
-            <form>
+            <form wire:submit="submit">
                 {{ $this->form }}
-            </form>
 
-            <div class="mt-6 flex items-center gap-3">
-                <x-filament::button 
-                    wire:click="submit" 
-                    wire:loading.attr="disabled"
-                    size="lg"
-                    color="success"
-                >
-                    <span wire:loading.remove>✅ Create All GRNs</span>
-                    <span wire:loading>Processing...</span>
-                </x-filament::button>
-                
-                <span class="text-sm text-gray-500 dark:text-gray-400">
-                    Tip: Use clone button to duplicate similar GRNs
-                </span>
-            </div>
-        </div>
+                <div class="mt-6 flex items-center gap-3">
+                    <x-filament::button 
+                        type="submit"
+                        wire:loading.attr="disabled"
+                        size="lg"
+                        color="success"
+                    >
+                        <span wire:loading.remove>✅ Create All GRNs</span>
+                        <span wire:loading>Processing...</span>
+                    </x-filament::button>
+                    
+                    <span class="text-sm text-gray-500 dark:text-gray-400">
+                        Tip: Use clone button to duplicate similar GRNs
+                    </span>
+                </div>
+            </form>
     </div>
 </x-filament-panels::page>
