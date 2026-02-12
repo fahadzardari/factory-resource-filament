@@ -39,7 +39,7 @@ class RecentGoodsReceiptsWidget extends BaseWidget
 
                 Tables\Columns\TextColumn::make('total_value')
                     ->label('Value')
-                    ->money('gbp')
+                    ->money('AED')
                     ->alignment('right'),
 
                 Tables\Columns\TextColumn::make('receipt_date')

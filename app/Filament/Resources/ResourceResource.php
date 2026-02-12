@@ -177,12 +177,12 @@ class ResourceResource extends Resource
                     ->width('150px'),
                 Tables\Columns\TextColumn::make('weighted_avg_price')
                     ->label('Avg Price')
-                    ->money('USD')
+                    ->money('AED')
                     ->description('Weighted avg')
                     ->toggleable(),
                 Tables\Columns\TextColumn::make('hub_value')
                     ->label('Hub Value')
-                    ->money('USD')
+                    ->money('AED')
                     ->weight(FontWeight::Bold)
                     ->color('success'),
                 Tables\Columns\TextColumn::make('created_at')

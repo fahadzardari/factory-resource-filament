@@ -49,8 +49,8 @@ class BatchesRelationManager extends RelationManager
                                     ->formatStateUsing(fn ($state) => ResourceBatch::UNIT_TYPES[$state] ?? $state),
                                 Infolists\Components\TextEntry::make('purchase_price')
                                     ->label('Unit Price')
-                                    ->money('USD')
-                                    ->icon('heroicon-o-currency-dollar'),
+                                    ->money('AED')
+                                    ->icon('heroicon-o-banknotes'),
                                 Infolists\Components\TextEntry::make('conversion_factor')
                                     ->label('Conversion Factor')
                                     ->visible(fn ($record) => $record->conversion_factor != 1.0),
@@ -102,8 +102,8 @@ class BatchesRelationManager extends RelationManager
                         Infolists\Components\TextEntry::make('total_value')
                             ->label('Current Inventory Value')
                             ->state(fn ($record) => $record->total_value)
-                            ->money('USD')
-                            ->hint(fn ($record) => "Based on {$record->quantity_remaining} {$record->unit_label} × \${$record->purchase_price}")
+                            ->money('AED')
+                            ->hint(fn ($record) => "Based on {$record->quantity_remaining} {$record->unit_label} × AED {$record->purchase_price}")
                             ->size(Infolists\Components\TextEntry\TextEntrySize::Large)
                             ->weight(FontWeight::Bold)
                             ->color('success'),
@@ -322,13 +322,13 @@ class BatchesRelationManager extends RelationManager
                     
                 Tables\Columns\TextColumn::make('purchase_price')
                     ->label('💰 Price/Unit')
-                    ->money('USD')
+                    ->money('AED')
                     ->sortable(),
                     
                 Tables\Columns\TextColumn::make('total_value')
                     ->label('💎 Current Value')
                     ->state(fn ($record) => $record->total_value)
-                    ->money('USD')
+                    ->money('AED')
                     ->sortable()
                     ->weight(FontWeight::Bold)
                     ->color('success')

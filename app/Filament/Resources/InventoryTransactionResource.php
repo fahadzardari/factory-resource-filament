@@ -90,12 +90,12 @@ class InventoryTransactionResource extends Resource
                     ->description(fn ($record) => $record->resource->base_unit ?? ''),
                 Tables\Columns\TextColumn::make('unit_price')
                     ->label('Unit Price')
-                    ->money('USD')
+                    ->money('AED')
                     ->sortable()
                     ->toggleable(),
                 Tables\Columns\TextColumn::make('total_value')
                     ->label('Total Value')
-                    ->money('USD')
+                    ->money('AED')
                     ->sortable()
                     ->weight(FontWeight::Bold)
                     ->color('success')
@@ -213,10 +213,10 @@ class InventoryTransactionResource extends Resource
                             ->suffix(fn ($record) => ' ' . $record->resource->base_unit),
                         Infolists\Components\TextEntry::make('unit_price')
                             ->label('Unit Price')
-                            ->money('USD'),
+                            ->money('AED'),
                         Infolists\Components\TextEntry::make('total_value')
                             ->label('Total Value')
-                            ->money('USD')
+                            ->money('AED')
                             ->weight(FontWeight::Bold),
                     ])->columns(3),
                     

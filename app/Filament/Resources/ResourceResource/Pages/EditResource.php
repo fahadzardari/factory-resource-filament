@@ -36,7 +36,7 @@ class EditResource extends EditRecord
                             
                         TextEntry::make('total_value')
                             ->label('Total Inventory Value')
-                            ->money('USD')
+                            ->money('AED')
                             ->size('lg')
                             ->weight('bold')
                             ->color('primary')
@@ -44,7 +44,7 @@ class EditResource extends EditRecord
                             
                         TextEntry::make('weighted_average_price')
                             ->label('Weighted Average Price')
-                            ->money('USD')
+                            ->money('AED')
                             ->helperText('Average cost per unit across all batches'),
                             
                         TextEntry::make('batches_count')

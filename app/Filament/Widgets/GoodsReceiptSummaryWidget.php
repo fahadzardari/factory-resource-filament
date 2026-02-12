@@ -36,7 +36,7 @@ class GoodsReceiptSummaryWidget extends BaseWidget
 
             Stat::make('Today\'s Receipt Value', 'AED ' . number_format($grnValueToday, 2))
                 ->description('Total value received today')
-                ->descriptionIcon('heroicon-o-currency-dollar')
+                ->descriptionIcon('heroicon-o-banknotes')
                 ->color('primary'),
 
             Stat::make('This Week', $grnCountThisWeek . ' GRNs')

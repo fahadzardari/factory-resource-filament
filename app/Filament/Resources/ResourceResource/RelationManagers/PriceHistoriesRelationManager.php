@@ -56,7 +56,7 @@ class PriceHistoriesRelationManager extends RelationManager
                     ->sortable(),
                 Tables\Columns\TextColumn::make('price')
                     ->label('Price')
-                    ->money('USD')
+                    ->money('AED')
                     ->sortable(),
                 Tables\Columns\TextColumn::make('quantity_purchased')
                     ->label('Qty Purchased')

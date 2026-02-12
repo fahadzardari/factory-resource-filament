@@ -250,14 +250,14 @@ class GoodsReceiptNoteResource extends Resource
 
                 Tables\Columns\TextColumn::make('unit_price')
                     ->label('Unit Price')
-                    ->money('gbp')
+                    ->money('AED')
                     ->sortable()
                     ->alignment('right')
                     ->toggleable(isToggledHiddenByDefault: true),
 
                 Tables\Columns\TextColumn::make('total_value')
                     ->label('Total Value')
-                    ->money('gbp')
+                    ->money('AED')
                     ->sortable()
                     ->alignment('right'),
 
