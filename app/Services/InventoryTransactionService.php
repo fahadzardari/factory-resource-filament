@@ -61,35 +61,103 @@ class InventoryTransactionService
 
     /**
      * Record Goods Received from GRN
-     * Creates GOODS_RECEIPT transaction and links to GRN
-     * Automatically called when GRN is created
+     * Creates GOODS_RECEIPT or ALLOCATION_IN transaction for each line item
+     * If GRN has project_id, items are allocated directly to project
+     * Otherwise, items go to Hub
      *
      * @param GoodsReceiptNote $grn
      * @param User|null $user
-     * @return InventoryTransaction
+     * @return array Array of created InventoryTransaction records
      */
     public function recordGoodsReceipt(
         GoodsReceiptNote $grn,
         ?User $user = null
-    ): InventoryTransaction {
-        // Validate GRN has required fields
-        if (!$grn->resource_id || !$grn->supplier_id || $grn->quantity_received <= 0) {
-            throw new InvalidArgumentException('GRN must have resource, supplier, and positive quantity.');
+    ): array {
+        // Validate GRN has required fields and line items
+        if (!$grn->supplier_id || !$grn->lineItems || $grn->lineItems->isEmpty()) {
+            throw new InvalidArgumentException('GRN must have supplier and at least one line item.');
         }
 
-        return InventoryTransaction::create([
-            'resource_id' => $grn->resource_id,
-            'project_id' => null, // Always to Hub
-            'transaction_type' => InventoryTransaction::TYPE_GOODS_RECEIPT,
-            'quantity' => $grn->quantity_received,
-            'unit_price' => $grn->unit_price,
-            'total_value' => $grn->total_value,
-            'transaction_date' => $grn->receipt_date,
-            'supplier' => $grn->supplier->name,
-            'grn_id' => $grn->id, // Link to GRN record
-            'notes' => $grn->notes,
-            'created_by' => $user?->id ?? Auth::id(),
-        ]);
+        $transactions = [];
+
+        // Process each line item
+        foreach ($grn->lineItems as $lineItem) {
+            // Validate line item
+            if (!$lineItem->resource_id || $lineItem->quantity_received <= 0) {
+                throw new InvalidArgumentException('Each line item must have a resource and positive quantity.');
+            }
+
+            // Convert receipt quantity to base unit
+            $baseQuantity = $lineItem->getBaseQuantity();
+            if ($baseQuantity <= 0) {
+                throw new InvalidArgumentException("Invalid unit conversion for resource {$lineItem->resource_id}");
+            }
+
+            // Calculate base unit price (price per base unit)
+            $conversionFactor = $lineItem->getConversionFactor($lineItem->receipt_unit, $lineItem->resource->base_unit);
+            $baseUnitPrice = $lineItem->unit_price / $conversionFactor;
+            $totalValue = $baseQuantity * $baseUnitPrice;
+
+            // IMPORTANT: Always create GOODS_RECEIPT to Central Hub first
+            // This ensures items are in the system before allocation
+            $goodsReceiptTransaction = InventoryTransaction::create([
+                'resource_id' => $lineItem->resource_id,
+                'project_id' => null, // Always to Hub
+                'transaction_type' => InventoryTransaction::TYPE_GOODS_RECEIPT,
+                'quantity' => $baseQuantity,
+                'unit_price' => $baseUnitPrice,
+                'total_value' => $totalValue,
+                'transaction_date' => $grn->receipt_date,
+                'supplier' => $grn->supplier->name,
+                'grn_id' => $grn->id,
+                'notes' => ($grn->notes ? $grn->notes . ' | ' : '') . "Receipt: {$lineItem->quantity_received}{$lineItem->receipt_unit}",
+                'created_by' => $user?->id ?? Auth::id(),
+            ]);
+
+            $transactions[] = $goodsReceiptTransaction;
+
+            // If GRN has project allocation, create allocation pair
+            if ($grn->project_id) {
+                try {
+                    // ALLOCATION_IN to project
+                    $allocationInTransaction = InventoryTransaction::create([
+                        'resource_id' => $lineItem->resource_id,
+                        'project_id' => $grn->project_id,
+                        'transaction_type' => InventoryTransaction::TYPE_ALLOCATION_IN,
+                        'quantity' => $baseQuantity,
+                        'unit_price' => $baseUnitPrice,
+                        'total_value' => $totalValue,
+                        'transaction_date' => $grn->receipt_date,
+                        'grn_id' => $grn->id,
+                        'notes' => "Direct allocation from GRN {$grn->grn_number} to project",
+                        'created_by' => $user?->id ?? Auth::id(),
+                    ]);
+
+                    $transactions[] = $allocationInTransaction;
+
+                    // ALLOCATION_OUT from Hub (removes from hub inventory)
+                    $allocationOutTransaction = InventoryTransaction::create([
+                        'resource_id' => $lineItem->resource_id,
+                        'project_id' => null, // From Hub
+                        'transaction_type' => InventoryTransaction::TYPE_ALLOCATION_OUT,
+                        'quantity' => -$baseQuantity,
+                        'unit_price' => $baseUnitPrice,
+                        'total_value' => -$totalValue,
+                        'transaction_date' => $grn->receipt_date,
+                        'notes' => "Allocation OUT from Hub to {$grn->project->name} for GRN {$grn->grn_number}",
+                        'created_by' => $user?->id ?? Auth::id(),
+                    ]);
+
+                    $transactions[] = $allocationOutTransaction;
+                } catch (\Exception $e) {
+                    throw new InvalidArgumentException(
+                        "Failed to create allocation for {$lineItem->resource->name}: " . $e->getMessage()
+                    );
+                }
+            }
+        }
+
+        return $transactions;
     }
 
     /**

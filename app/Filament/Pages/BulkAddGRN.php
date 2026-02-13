@@ -22,6 +22,7 @@ class BulkAddGRN extends Page implements Forms\Contracts\HasForms
     protected static ?string $navigationLabel = '📦 Bulk Add GRN Records';
     protected static ?int $navigationSort = 3;
     protected static ?string $navigationGroup = 'Bulk Operations';
+    protected static bool $shouldRegisterNavigation = false;
     protected static string $view = 'filament.pages.bulk-add-grn';
     protected static ?string $title = 'Bulk Add Goods Receipt Notes';
 
@@ -144,45 +145,48 @@ class BulkAddGRN extends Page implements Forms\Contracts\HasForms
         }
         
         try {
-            $count = 0;
+            $createdCount = 0;
             $service = app(InventoryTransactionService::class);
             
-            DB::transaction(function () use ($grns, &$count, $service) {
+            DB::transaction(function () use ($grns, &$createdCount, $service) {
                 foreach ($grns as $grn) {
                     $quantity = (float) $grn['quantity_received'];
                     $unitPrice = (float) $grn['unit_price'];
                     $resourceId = (int) $grn['resource_id'];
                     $receiptUnit = $grn['receipt_unit'] ?? null;
                     
-                    // Handle unit conversion if receipt_unit is provided
-                    if ($resourceId && $receiptUnit) {
-                        $resource = Resource::find($resourceId);
-                        if ($resource) {
-                            $baseUnit = $resource->base_unit;
-                            // Only convert if units are different
-                            if (strtolower($receiptUnit) !== strtolower($baseUnit)) {
-                                $conversionFactor = $this->getConversionFactor($receiptUnit, $baseUnit);
-                                $quantity = round($quantity * $conversionFactor, 3);
-                                $unitPrice = round($unitPrice / $conversionFactor, 2);
-                            }
-                        }
+                    // Get the resource
+                    $resource = Resource::find($resourceId);
+                    if (!$resource) {
+                        throw new \Exception("Resource {$resourceId} not found");
+                    }
+                    
+                    // Determine receipt unit (defaultto base unit if not provided)
+                    if (!$receiptUnit) {
+                        $receiptUnit = $resource->base_unit;
                     }
                     
                     $receiptDate = $grn['receipt_date'] 
                         ? Carbon::parse($grn['receipt_date'])->format('Y-m-d')
                         : now()->format('Y-m-d');
                     
-                    // Create the GRN
+                    // Create the GRN header (without resource_id - it's now in line items)
                     $grnRecord = GoodsReceiptNote::create([
                         'supplier_id' => (int) $grn['supplier_id'],
-                        'resource_id' => $resourceId,
-                        'quantity_received' => $quantity,
-                        'unit_price' => $unitPrice,
-                        'total_value' => round($quantity * $unitPrice, 2),
                         'receipt_date' => $receiptDate,
                         'delivery_reference' => $grn['delivery_reference'] ?? null,
                         'notes' => $grn['notes'] ?? null,
                         'created_by' => Auth::id(),
+                    ]);
+                    
+                    // Create line item for this GRN
+                    \App\Models\GoodsReceiptNoteLineItem::create([
+                        'grn_id' => $grnRecord->id,
+                        'resource_id' => $resourceId,
+                        'quantity_received' => $quantity,
+                        'receipt_unit' => $receiptUnit,
+                        'unit_price' => $unitPrice,
+                        'total_value' => round($quantity * $unitPrice, 2),
                     ]);
                     
                     // Record inventory transaction
@@ -193,13 +197,13 @@ class BulkAddGRN extends Page implements Forms\Contracts\HasForms
                         // Continue even if inventory transaction fails
                     }
                     
-                    $count++;
+                    $createdCount++;
                 }
             });
             
             Notification::make()
                 ->success()
-                ->title("✅ Success! {$count} Goods Receipt" . ($count > 1 ? 's' : '') . " Created")
+                ->title("✅ Success! {$createdCount} Goods Receipt" . ($createdCount > 1 ? 's' : '') . " Created")
                 ->body("All GRN records have been created and inventory has been updated automatically.")
                 ->duration(5)
                 ->send();
@@ -470,33 +474,5 @@ class BulkAddGRN extends Page implements Forms\Contracts\HasForms
         return $conversionMap[strtolower($baseUnit)] ?? [
             $baseUnit => $baseUnit . ' - Base Unit',
         ];
-    }
-
-    /**
-     * Get conversion factor from one unit to another
-     */
-    private function getConversionFactor(string $fromUnit, string $toUnit): float
-    {
-        $fromUnit = strtolower($fromUnit);
-        $toUnit = strtolower($toUnit);
-
-        if ($fromUnit === $toUnit) {
-            return 1.0;
-        }
-
-        $conversions = [
-            'kg' => 1.0, 'g' => 0.001, 'mg' => 0.000001, 'ton' => 1000.0, 'lb' => 0.453592, 'oz' => 0.0283495,
-            'liter' => 1.0, 'liters' => 1.0, 'ml' => 0.001, 'gallon' => 3.78541, 'm3' => 1000.0,
-            'm' => 1.0, 'cm' => 0.01, 'mm' => 0.001, 'km' => 1000.0, 'ft' => 0.3048, 'inch' => 0.0254,
-            'sqm' => 1.0, 'sqft' => 0.092903, 'sqcm' => 0.0001,
-            'piece' => 1.0, 'pieces' => 1.0, 'unit' => 1.0, 'dozen' => 12.0, 'box' => 1.0, 'carton' => 1.0,
-            'pallet' => 1.0, 'bag' => 1.0, 'sack' => 1.0, 'bundle' => 1.0, 'set' => 1.0, 'pair' => 2.0,
-            'roll' => 1.0, 'sheet' => 1.0, 'panel' => 1.0, 'tile' => 1.0,
-        ];
-
-        $fromFactor = $conversions[$fromUnit] ?? 1.0;
-        $toFactor = $conversions[$toUnit] ?? 1.0;
-
-        return $fromFactor / $toFactor;
     }
 }

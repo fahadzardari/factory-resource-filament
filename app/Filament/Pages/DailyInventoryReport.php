@@ -110,45 +110,112 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
         $resources = Resource::with('transactions')->orderBy('name')->get();
         $report = [];
 
-        foreach ($resources as $resource) {
-            // Get opening balance (before this date)
-            $openingTxn = $this->getBalanceAsOfDate($resource->id, $date->copy()->subDay()->endOfDay(), $projectIds);
+        // If multiple projects selected, organize by project
+        if (!empty($projectIds) && count($projectIds) > 1) {
+            // Get project names
+            $projects = Project::whereIn('id', $projectIds)->get()->keyBy('id');
             
-            // Get closing balance (end of this date)
-            $closingTxn = $this->getBalanceAsOfDate($resource->id, $date->copy()->endOfDay(), $projectIds);
-
-            // Get movements for this date
-            $inMovements = $this->getMovementsForDate($resource->id, $date, 'IN', $projectIds);
-            $outMovements = $this->getMovementsForDate($resource->id, $date, 'OUT', $projectIds);
-
-            // Calculate totals
-            $inQty = $inMovements->sum('quantity');
-            $inValue = $inMovements->sum('total_value');
-            $outQty = abs($outMovements->sum('quantity')); // OUT transactions are negative
-            $outValue = abs($outMovements->sum('total_value'));
-
-            // Only include if there are movements or stock exists
-            if ($openingTxn['qty'] > 0 || $closingTxn['qty'] > 0 || $inQty > 0 || $outQty > 0) {
-                $report[] = [
-                    'resource_name' => $resource->name,
-                    'item_code' => $resource->sku,
-                    'base_unit' => $resource->base_unit,
-                    'projects' => $this->getProjectsForResource($resource->id),
-                    'opening_qty' => $openingTxn['qty'],
-                    'opening_value' => $openingTxn['value'],
-                    'in_qty' => $inQty,
-                    'in_value' => $inValue,
-                    'out_qty' => $outQty,
-                    'out_value' => $outValue,
-                    'closing_qty' => $closingTxn['qty'],
-                    'avg_price' => $closingTxn['rate'],
-                    'closing_value' => $closingTxn['value'],
-                    'suppliers' => $this->getSuppliersForDate($resource->id, $date, $projectIds),
-                ];
+            // Initialize report structure: [project_id => [items]]
+            foreach ($projectIds as $projectId) {
+                $report[$projectId] = [];
             }
+
+            // Build report for each resource and each project separately
+            foreach ($resources as $resource) {
+                foreach ($projectIds as $projectId) {
+                    $reportItem = $this->buildResourceReportForProject($resource, $date, $projectId);
+                    
+                    if ($reportItem) {
+                        $report[$projectId][] = $reportItem;
+                    }
+                }
+            }
+
+            // Format for view with project grouping
+            $formattedReport = [];
+            foreach ($projectIds as $projectId) {
+                $items = $report[$projectId];
+                if (!empty($items)) {
+                    $formattedReport[] = [
+                        'project_id' => $projectId,
+                        'project_name' => $projects[$projectId]->name ?? 'Project ' . $projectId,
+                        'items' => $items,
+                        'totals' => $this->calculateProjectTotals($items),
+                    ];
+                }
+            }
+
+            return $formattedReport;
+        } else {
+            // Single project or hub - return flat report
+            foreach ($resources as $resource) {
+                $projectId = !empty($projectIds) ? $projectIds[0] : null;
+                $reportItem = $this->buildResourceReportForProject($resource, $date, $projectId);
+                
+                if ($reportItem) {
+                    $report[] = $reportItem;
+                }
+            }
+
+            return $report;
+        }
+    }
+
+    private function buildResourceReportForProject(\App\Models\Resource $resource, \Carbon\Carbon $date, ?int $projectId): ?array
+    {
+        // Get opening balance
+        $openingTxn = $this->getBalanceAsOfDate($resource->id, $date->copy()->subDay()->endOfDay(), $projectId ? [$projectId] : []);
+        
+        // Get closing balance
+        $closingTxn = $this->getBalanceAsOfDate($resource->id, $date->copy()->endOfDay(), $projectId ? [$projectId] : []);
+
+        // Get movements for this date
+        $inMovements = $this->getMovementsForDate($resource->id, $date, 'IN', $projectId ? [$projectId] : []);
+        $outMovements = $this->getMovementsForDate($resource->id, $date, 'OUT', $projectId ? [$projectId] : []);
+
+        // Calculate totals
+        $inQty = $inMovements->sum('quantity');
+        $inValue = $inMovements->sum('total_value');
+        $outQty = abs($outMovements->sum('quantity'));
+        $outValue = abs($outMovements->sum('total_value'));
+
+        // Only include if there are movements or stock exists
+        $hasMovements = $inQty > 0 || $outQty > 0;
+        $hasStock = $openingTxn['qty'] != 0 || $closingTxn['qty'] != 0;
+        
+        if (!($hasMovements || $hasStock)) {
+            return null;
         }
 
-        return $report;
+        return [
+            'resource_name' => $resource->name,
+            'item_code' => $resource->sku,
+            'base_unit' => $resource->base_unit,
+            'opening_qty' => $openingTxn['qty'],
+            'opening_value' => $openingTxn['value'],
+            'in_qty' => $inQty,
+            'in_value' => $inValue,
+            'out_qty' => $outQty,
+            'out_value' => $outValue,
+            'closing_qty' => $closingTxn['qty'],
+            'avg_price' => $closingTxn['rate'],
+            'closing_value' => $closingTxn['value'],
+            'suppliers' => $this->getSuppliersForDate($resource->id, $date, $projectId ? [$projectId] : []),
+        ];
+    }
+
+    private function calculateProjectTotals(array $items): array
+    {
+        return [
+            'opening_qty' => collect($items)->sum('opening_qty'),
+            'opening_value' => collect($items)->sum('opening_value'),
+            'in_qty' => collect($items)->sum('in_qty'),
+            'in_value' => collect($items)->sum('in_value'),
+            'out_qty' => collect($items)->sum('out_qty'),
+            'out_value' => collect($items)->sum('out_value'),
+            'closing_qty' => collect($items)->sum('closing_qty'),
+            'closing_value' => collect($items)->sum('closing_value'),
+        ];
     }
 
     private function getBalanceAsOfDate(int $resourceId, \Carbon\Carbon $asOfDate, array $projectIds): array
@@ -157,19 +224,32 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
             ->where('transaction_date', '<=', $asOfDate->format('Y-m-d'));
 
         if (!empty($projectIds)) {
+            // PROJECT REPORT: Include all movements to/from that project
             $query->whereIn('project_id', $projectIds);
         } else {
-            $query->whereNull('project_id'); // Hub only
+            // SYSTEM-WIDE REPORT: Include only REAL movements
+            // - Consumption at ANY project reduces system inventory (include it)
+            // - Only exclude internal allocations/transfers
+            // Note: We do NOT filter by whereNull('project_id') because consumption
+            // at project level still removes items from total system
+            $query->whereIn('transaction_type', [
+                InventoryTransaction::TYPE_GOODS_RECEIPT,
+                InventoryTransaction::TYPE_PURCHASE,
+                InventoryTransaction::TYPE_CONSUMPTION,
+                InventoryTransaction::TYPE_DIRECT_CONSUMPTION,
+            ]);
         }
 
         $transactions = $query->get();
         $totalQty = $transactions->sum('quantity');
         $totalValue = $transactions->sum('total_value');
-        $rate = $totalQty > 0 ? $totalValue / $totalQty : 0;
+        
+        // Calculate average price based on actual quantity
+        $rate = $totalQty != 0 ? $totalValue / $totalQty : 0;
 
         return [
-            'qty' => max(0, $totalQty),
-            'value' => max(0, $totalValue),
+            'qty' => $totalQty,           // Show actual balance
+            'value' => $totalValue,       // Show actual value
             'rate' => $rate,
         ];
     }
@@ -179,18 +259,42 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
         $query = InventoryTransaction::where('resource_id', $resourceId)
             ->where('transaction_date', $date->format('Y-m-d'));
 
-        if (!empty($projectIds)) {
-            $query->whereIn('project_id', $projectIds);
-        } else {
-            $query->whereNull('project_id'); // Hub only
-        }
-
         if ($type === 'IN') {
+            // IN movements: Different for system vs project reports
+            if (!empty($projectIds)) {
+                // Project report: Include all receipts and allocations to this project
+                $query->whereIn('project_id', $projectIds);
+                $inTypes = ['GOODS_RECEIPT', 'ALLOCATION_IN', 'TRANSFER_IN'];
+            } else {
+                // System-wide: Only real additions (GOODS_RECEIPT, PURCHASE)
+                // Exclude allocations - these are internal transfers, not real system additions
+                $query->whereNull('project_id');
+                $inTypes = ['GOODS_RECEIPT', 'PURCHASE'];
+            }
+            
             $query->where('quantity', '>', 0)
-                ->whereIn('transaction_type', ['GOODS_RECEIPT', 'ALLOCATION_IN', 'TRANSFER_IN']);
+                ->whereIn('transaction_type', $inTypes);
         } else {
-            $query->where('quantity', '<', 0)
-                ->whereIn('transaction_type', ['CONSUMPTION', 'DIRECT_CONSUMPTION', 'ALLOCATION_OUT', 'TRANSFER_OUT']);
+            // OUT movements: Different for system vs project reports
+            if (!empty($projectIds)) {
+                // Project report: All consumptions and allocations OUT from this project
+                $query->whereIn('project_id', $projectIds);
+                $outTypes = ['CONSUMPTION', 'DIRECT_CONSUMPTION', 'ALLOCATION_OUT', 'TRANSFER_OUT'];
+            } else {
+                // System-wide: Include ALL real consumption (from any location)
+                // because consumption removes items from the system entirely
+                // But EXCLUDE allocations - they're internal transfers
+                // Note: We do NOT filter by whereNull('project_id') for consumption
+                // because consumption at a project still reduces total system inventory
+                $query->whereIn('transaction_type', ['CONSUMPTION', 'DIRECT_CONSUMPTION']);
+            }
+            
+            $query->where('quantity', '<', 0);
+            
+            // Apply transaction type filter only if project-filtered
+            if (!empty($projectIds)) {
+                $query->whereIn('transaction_type', $outTypes);
+            }
         }
 
         return $query->get();
@@ -242,67 +346,139 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                 'Content-Disposition' => "attachment; filename=\"$fileName\"",
             ];
 
-            $callback = function () {
+            // Detect if report is grouped by projects or flat
+            $isGroupedByProject = !empty($this->reportData) && isset($this->reportData[0]['project_id']);
+
+            $callback = function () use ($isGroupedByProject) {
                 $file = fopen('php://output', 'w');
                 
                 // Write UTF-8 BOM for proper Excel character encoding
                 fputs($file, "\xEF\xBB\xBF");
                 
-                // Write header
-                fputcsv($file, [
-                    'Item Code',
-                    'Item Description',
-                    'Unit',
-                    'Opening Qty',
-                    'Opening Value',
-                    'In Qty',
-                    'In Value',
-                    'Out Qty',
-                    'Out Value',
-                    'Closing Qty',
-                    'Avg Price',
-                    'Closing Value',
-                    'Projects',
-                    'Supplier',
-                ]);
+                if ($isGroupedByProject) {
+                    // GROUPED REPORT: Write by project
+                    $isFirstProject = true;
+                    
+                    foreach ($this->reportData as $projectSection) {
+                        // Add blank row between projects (except first)
+                        if (!$isFirstProject) {
+                            fputcsv($file, []);
+                        }
+                        $isFirstProject = false;
 
-                // Write data rows
-                foreach ($this->reportData as $item) {
+                        // Write project header
+                        fputcsv($file, [
+                            'PROJECT: ' . $projectSection['project_name'],
+                        ]);
+
+                        // Write column headers
+                        fputcsv($file, [
+                            'Item Code',
+                            'Item Description',
+                            'Unit',
+                            'Opening Qty',
+                            'Opening Value',
+                            'In Qty',
+                            'In Value',
+                            'Out Qty',
+                            'Out Value',
+                            'Closing Qty',
+                            'Avg Price',
+                            'Closing Value',
+                            'Supplier',
+                        ]);
+
+                        // Write items for this project
+                        foreach ($projectSection['items'] as $item) {
+                            fputcsv($file, [
+                                $item['item_code'],
+                                $item['resource_name'],
+                                $item['base_unit'],
+                                round($item['opening_qty'], 2),
+                                round($item['opening_value'], 2),
+                                round($item['in_qty'], 2),
+                                round($item['in_value'], 2),
+                                round($item['out_qty'], 2),
+                                round($item['out_value'], 2),
+                                round($item['closing_qty'], 2),
+                                round($item['avg_price'], 2),
+                                round($item['closing_value'], 2),
+                                $item['suppliers'],
+                            ]);
+                        }
+
+                        // Write project totals
+                        fputcsv($file, [
+                            $projectSection['project_name'] . ' TOTALS',
+                            '',
+                            '',
+                            round($projectSection['totals']['opening_qty'], 2),
+                            round($projectSection['totals']['opening_value'], 2),
+                            round($projectSection['totals']['in_qty'], 2),
+                            round($projectSection['totals']['in_value'], 2),
+                            round($projectSection['totals']['out_qty'], 2),
+                            round($projectSection['totals']['out_value'], 2),
+                            round($projectSection['totals']['closing_qty'], 2),
+                            '',
+                            round($projectSection['totals']['closing_value'], 2),
+                            '',
+                        ]);
+                    }
+                } else {
+                    // FLAT REPORT: Single project or hub
+                    // Write column headers
                     fputcsv($file, [
-                        $item['item_code'],
-                        $item['resource_name'],
-                        $item['base_unit'],
-                        round($item['opening_qty'], 2),
-                        round($item['opening_value'], 2),
-                        round($item['in_qty'], 2),
-                        round($item['in_value'], 2),
-                        round($item['out_qty'], 2),
-                        round($item['out_value'], 2),
-                        round($item['closing_qty'], 2),
-                        round($item['avg_price'], 2),
-                        round($item['closing_value'], 2),
-                        $item['projects'],
-                        $item['suppliers'],
+                        'Item Code',
+                        'Item Description',
+                        'Unit',
+                        'Opening Qty',
+                        'Opening Value',
+                        'In Qty',
+                        'In Value',
+                        'Out Qty',
+                        'Out Value',
+                        'Closing Qty',
+                        'Avg Price',
+                        'Closing Value',
+                        'Supplier',
+                    ]);
+
+                    // Write data rows
+                    foreach ($this->reportData as $item) {
+                        fputcsv($file, [
+                            $item['item_code'],
+                            $item['resource_name'],
+                            $item['base_unit'],
+                            round($item['opening_qty'], 2),
+                            round($item['opening_value'], 2),
+                            round($item['in_qty'], 2),
+                            round($item['in_value'], 2),
+                            round($item['out_qty'], 2),
+                            round($item['out_value'], 2),
+                            round($item['closing_qty'], 2),
+                            round($item['avg_price'], 2),
+                            round($item['closing_value'], 2),
+                            $item['suppliers'],
+                        ]);
+                    }
+
+                    // Write totals row
+                    fputcsv($file, [
+                        'TOTAL',
+                        '',
+                        '',
+                        round(collect($this->reportData)->sum('opening_qty'), 2),
+                        round(collect($this->reportData)->sum('opening_value'), 2),
+                        round(collect($this->reportData)->sum('in_qty'), 2),
+                        round(collect($this->reportData)->sum('in_value'), 2),
+                        round(collect($this->reportData)->sum('out_qty'), 2),
+                        round(collect($this->reportData)->sum('out_value'), 2),
+                        round(collect($this->reportData)->sum('closing_qty'), 2),
+                        '',
+                        round(collect($this->reportData)->sum('closing_value'), 2),
+                        '',
                     ]);
                 }
-
-                // Write totals row
-                fputcsv($file, [
-                    'TOTAL',
-                    '',
-                    '',
-                    round(collect($this->reportData)->sum('opening_qty'), 2),
-                    round(collect($this->reportData)->sum('opening_value'), 2),
-                    round(collect($this->reportData)->sum('in_qty'), 2),
-                    round(collect($this->reportData)->sum('in_value'), 2),
-                    round(collect($this->reportData)->sum('out_qty'), 2),
-                    round(collect($this->reportData)->sum('out_value'), 2),
-                    round(collect($this->reportData)->sum('closing_qty'), 2),
-                    '',
-                    round(collect($this->reportData)->sum('closing_value'), 2),
-                    '',
-                    '',
-                ]);
 
                 fclose($file);
             };

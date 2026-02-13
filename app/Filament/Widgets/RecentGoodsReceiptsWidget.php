@@ -27,19 +27,24 @@ class RecentGoodsReceiptsWidget extends BaseWidget
                     ->label('Supplier')
                     ->searchable(),
 
-                Tables\Columns\TextColumn::make('resource.name')
-                    ->label('Resource')
-                    ->searchable()
-                    ->limit(30),
+                Tables\Columns\TextColumn::make('lineItems')
+                    ->label('Items')
+                    ->formatStateUsing(function ($record) {
+                        $items = $record->lineItems ?? [];
+                        if ($items->isEmpty()) {
+                            return '—';
+                        }
+                        $count = $items->count();
+                        return $count . ' item' . ($count !== 1 ? 's' : '');
+                    })
+                    ->alignment('center'),
 
-                Tables\Columns\TextColumn::make('quantity_received')
-                    ->label('Qty')
-                    ->numeric(decimalPlaces: 2)
-                    ->alignment('right'),
-
-                Tables\Columns\TextColumn::make('total_value')
-                    ->label('Value')
-                    ->money('AED')
+                Tables\Columns\TextColumn::make('lineItems_total')
+                    ->label('Total Value')
+                    ->formatStateUsing(function ($record) {
+                        $total = $record->lineItems?->sum('total_value') ?? 0;
+                        return 'AED ' . number_format($total, 2);
+                    })
                     ->alignment('right'),
 
                 Tables\Columns\TextColumn::make('receipt_date')

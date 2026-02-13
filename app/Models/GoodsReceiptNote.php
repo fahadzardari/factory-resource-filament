@@ -16,10 +16,7 @@ class GoodsReceiptNote extends Model
     protected $fillable = [
         'grn_number',
         'supplier_id',
-        'resource_id',
-        'quantity_received',
-        'unit_price',
-        'total_value',
+        'project_id',
         'delivery_reference',
         'receipt_date',
         'notes',
@@ -27,14 +24,11 @@ class GoodsReceiptNote extends Model
     ];
 
     protected $casts = [
-        'quantity_received' => 'decimal:3',
-        'unit_price' => 'decimal:2',
-        'total_value' => 'decimal:2',
         'receipt_date' => 'date',
     ];
 
     /**
-     * Boot method - Auto-generate GRN number and calculate total_value
+     * Boot method - Auto-generate GRN number
      */
     protected static function boot()
     {
@@ -47,9 +41,6 @@ class GoodsReceiptNote extends Model
                 $count = static::whereYear('created_at', $year)->count() + 1;
                 $model->grn_number = "GRN-{$year}-" . str_pad($count, 5, '0', STR_PAD_LEFT);
             }
-
-            // Auto-calculate total value
-            $model->total_value = $model->quantity_received * $model->unit_price;
 
             // Auto-set created_by to current user if not set
             if (!$model->created_by && auth()->check()) {
@@ -66,14 +57,19 @@ class GoodsReceiptNote extends Model
         return $this->belongsTo(Supplier::class);
     }
 
-    public function resource(): BelongsTo
+    public function project(): BelongsTo
     {
-        return $this->belongsTo(Resource::class);
+        return $this->belongsTo(Project::class);
     }
 
     public function createdBy(): BelongsTo
     {
         return $this->belongsTo(User::class, 'created_by');
+    }
+
+    public function lineItems(): HasMany
+    {
+        return $this->hasMany(GoodsReceiptNoteLineItem::class, 'grn_id');
     }
 
     public function inventoryTransactions(): HasMany
@@ -84,11 +80,6 @@ class GoodsReceiptNote extends Model
     /**
      * Scopes
      */
-    public function scopeForResource($query, int $resourceId)
-    {
-        return $query->where('resource_id', $resourceId);
-    }
-
     public function scopeForSupplier($query, int $supplierId)
     {
         return $query->where('supplier_id', $supplierId);
@@ -97,6 +88,11 @@ class GoodsReceiptNote extends Model
     public function scopeOnDate($query, $date)
     {
         return $query->whereDate('receipt_date', $date);
+    }
+
+    public function scopeForProject($query, int $projectId)
+    {
+        return $query->where('project_id', $projectId);
     }
 
     public function scopeBetweenDates($query, $startDate, $endDate)
@@ -115,10 +111,5 @@ class GoodsReceiptNote extends Model
     public function getDisplayNameAttribute(): string
     {
         return "{$this->grn_number} - {$this->supplier->name}";
-    }
-
-    public function getResourceDisplayAttribute(): string
-    {
-        return "{$this->resource->name} ({$this->quantity_received} {$this->resource->base_unit})";
     }
 }

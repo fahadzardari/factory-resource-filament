@@ -3,10 +3,12 @@
 namespace App\Filament\Widgets;
 
 use App\Models\GoodsReceiptNote;
+use App\Models\GoodsReceiptNoteLineItem;
 use App\Models\Supplier;
 use Filament\Widgets\StatsOverviewWidget as BaseWidget;
 use Filament\Widgets\StatsOverviewWidget\Stat;
 use Carbon\Carbon;
+use Illuminate\Support\Facades\DB;
 
 class GoodsReceiptSummaryWidget extends BaseWidget
 {
@@ -22,8 +24,18 @@ class GoodsReceiptSummaryWidget extends BaseWidget
         $grnCountThisWeek = GoodsReceiptNote::whereBetween('receipt_date', [$weekStart, now()])->count();
         $grnCountThisMonth = GoodsReceiptNote::whereBetween('receipt_date', [$monthStart, now()])->count();
 
-        $grnValueToday = GoodsReceiptNote::whereDate('receipt_date', $today)->sum('total_value');
-        $grnValueThisMonth = GoodsReceiptNote::whereBetween('receipt_date', [$monthStart, now()])->sum('total_value');
+        // Calculate total value from line items instead of grn table
+        $grnValueToday = GoodsReceiptNoteLineItem::join('goods_receipt_notes', 'goods_receipt_note_line_items.grn_id', '=', 'goods_receipt_notes.id')
+            ->whereDate('goods_receipt_notes.receipt_date', $today)
+            ->sum('goods_receipt_note_line_items.total_value');
+
+        $grnValueThisWeek = GoodsReceiptNoteLineItem::join('goods_receipt_notes', 'goods_receipt_note_line_items.grn_id', '=', 'goods_receipt_notes.id')
+            ->whereBetween('goods_receipt_notes.receipt_date', [$weekStart, now()])
+            ->sum('goods_receipt_note_line_items.total_value');
+
+        $grnValueThisMonth = GoodsReceiptNoteLineItem::join('goods_receipt_notes', 'goods_receipt_note_line_items.grn_id', '=', 'goods_receipt_notes.id')
+            ->whereBetween('goods_receipt_notes.receipt_date', [$monthStart, now()])
+            ->sum('goods_receipt_note_line_items.total_value');
 
         $activeSuppliers = Supplier::where('is_active', true)->count();
         $totalGRNs = GoodsReceiptNote::count();
@@ -40,7 +52,7 @@ class GoodsReceiptSummaryWidget extends BaseWidget
                 ->color('primary'),
 
             Stat::make('This Week', $grnCountThisWeek . ' GRNs')
-                ->description(number_format(GoodsReceiptNote::whereBetween('receipt_date', [$weekStart, now()])->sum('total_value'), 2) . ' AED')
+                ->description(number_format($grnValueThisWeek, 2) . ' AED')
                 ->descriptionIcon('heroicon-o-calendar')
                 ->color('info'),
 
@@ -61,3 +73,4 @@ class GoodsReceiptSummaryWidget extends BaseWidget
         ];
     }
 }
+

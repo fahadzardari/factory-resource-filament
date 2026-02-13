@@ -46,7 +46,7 @@ class GoodsReceiptNoteResource extends Resource
                     ])
                     ->columns(2),
 
-                Forms\Components\Section::make('Supplier & Resource')
+                Forms\Components\Section::make('Supplier & Allocation')
                     ->schema([
                         Forms\Components\Select::make('supplier_id')
                             ->label('Supplier')
@@ -69,152 +69,164 @@ class GoodsReceiptNoteResource extends Resource
                                     ->tel(),
                             ]),
 
-                        Forms\Components\Select::make('resource_id')
-                            ->label('Resource/Item')
-                            ->relationship('resource', 'name')
+                        Forms\Components\Select::make('project_id')
+                            ->label('Allocate Directly to Project (Optional)')
+                            ->relationship('project', 'name')
                             ->searchable()
                             ->preload()
-                            ->required()
-                            ->live(),
+                            ->hint('If selected, all items will be allocated directly to this project. Leave empty to add items to central warehouse.')
+                            ->helperText('This allows you to receive items directly to a project instead of the hub'),
                     ])
                     ->columns(2),
 
-                Forms\Components\Section::make('Quantity & Pricing')
-                    ->description('Received quantity can be in any unit - will be converted to base unit for storage')
+                Forms\Components\Section::make('Line Items')
+                    ->description('Add items received in this delivery. Each item can be in a different unit - will be auto-converted to base unit.')
                     ->schema([
-                        Forms\Components\Grid::make(2)
+                        Forms\Components\Repeater::make('lineItems')
+                            ->relationship('lineItems')
                             ->schema([
-                                Forms\Components\TextInput::make('quantity_received')
-                                    ->label('Quantity Received')
-                                    ->required()
-                                    ->numeric()
-                                    ->minValue(0.001)
-                                    ->step(0.001)
-                                    ->live()
-                                    ->reactive()
-                                    ->afterStateUpdated(function ($state, $set, $get) {
-                                        $unitPrice = $get('unit_price');
-                                        if ($state && $unitPrice) {
-                                            $set('total_value', round($state * $unitPrice, 2));
+                                Forms\Components\Grid::make(4)
+                                    ->schema([
+                                        Forms\Components\Select::make('resource_id')
+                                            ->label('Resource/Item')
+                                            ->relationship('resource', 'name')
+                                            ->searchable()
+                                            ->preload()
+                                            ->required()
+                                            ->live()
+                                            ->columnSpan(1),
+
+                                        Forms\Components\TextInput::make('quantity_received')
+                                            ->label('Quantity')
+                                            ->required()
+                                            ->numeric()
+                                            ->minValue(0.001)
+                                            ->step(0.001)
+                                            ->live()
+                                            ->reactive()
+                                            ->afterStateUpdated(function ($state, $set, $get) {
+                                                $unitPrice = $get('unit_price');
+                                                if ($state && $unitPrice) {
+                                                    $set('total_value', round($state * $unitPrice, 2));
+                                                }
+                                            })
+                                            ->columnSpan(1),
+
+                                        Forms\Components\Select::make('receipt_unit')
+                                            ->label('Unit')
+                                            ->required()
+                                            ->options(fn ($get) => self::getUnitOptionsFor($get('resource_id')))
+                                            ->searchable()
+                                            ->live()
+                                            ->reactive()
+                                            ->columnSpan(1),
+
+                                        Forms\Components\TextInput::make('unit_price')
+                                            ->label('Price per Unit')
+                                            ->required()
+                                            ->numeric()
+                                            ->minValue(0)
+                                            ->step(0.01)
+                                            ->live()
+                                            ->reactive()
+                                            ->afterStateUpdated(function ($state, $set, $get) {
+                                                $quantity = $get('quantity_received');
+                                                if ($quantity && $state) {
+                                                    $set('total_value', round($quantity * $state, 2));
+                                                }
+                                            })
+                                            ->columnSpan(1),
+                                    ]),
+
+                                Forms\Components\Placeholder::make('conversion_info')
+                                    ->content(function ($get) {
+                                        $quantity = $get('quantity_received');
+                                        $receiptUnit = $get('receipt_unit');
+                                        $resourceId = $get('resource_id');
+                                        
+                                        if (!$quantity || !$receiptUnit || !$resourceId) {
+                                            return '📝 Enter quantity and unit to see conversion';
+                                        }
+
+                                        try {
+                                            $resource = \App\Models\Resource::find($resourceId);
+                                            if (!$resource) {
+                                                return '⚠️ Resource not found';
+                                            }
+
+                                            $baseUnit = $resource->base_unit;
+                                            $conversionFactor = self::getConversionFactor($receiptUnit, $baseUnit);
+                                            $convertedQty = $quantity * $conversionFactor;
+
+                                            if ($conversionFactor == 1) {
+                                                return "✅ **No conversion** - Base unit: {$baseUnit}";
+                                            } else {
+                                                return "📊 {$quantity} {$receiptUnit} = **" . number_format($convertedQty, 3) . " {$baseUnit}** (stored in database)";
+                                            }
+                                        } catch (\Exception $e) {
+                                            return '⚠️ Conversion error: ' . $e->getMessage();
                                         }
                                     })
-                                    ->columnSpan(1),
+                                    ->visible(fn ($get) => $get('quantity_received') && $get('receipt_unit') && $get('resource_id'))
+                                    ->columnSpanFull(),
 
-                                Forms\Components\Select::make('receipt_unit')
-                                    ->label('Unit of Receipt')
-                                    ->required()
-                                    ->options(fn ($get) => self::getUnitOptionsFor($get('resource_id')))
-                                    ->searchable()
-                                    ->live()
-                                    ->reactive()
-                                    ->columnSpan(1),
-                            ]),
+                                Forms\Components\Placeholder::make('price_info')
+                                    ->content(function ($get) {
+                                        $quantity = $get('quantity_received');
+                                        $unitPrice = $get('unit_price');
+                                        $receiptUnit = $get('receipt_unit');
+                                        $resourceId = $get('resource_id');
+                                        
+                                        if (!$quantity || !$unitPrice || !$receiptUnit || !$resourceId) {
+                                            return '';
+                                        }
 
-                        Forms\Components\Placeholder::make('conversion_info')
-                            ->content(function ($get) {
-                                $quantity = $get('quantity_received');
-                                $receiptUnit = $get('receipt_unit');
-                                $resourceId = $get('resource_id');
-                                
-                                if (!$quantity || !$receiptUnit || !$resourceId) {
-                                    return '📝 Enter quantity and unit to see conversion';
-                                }
+                                        try {
+                                            $resource = \App\Models\Resource::find($resourceId);
+                                            if (!$resource) {
+                                                return '';
+                                            }
 
-                                try {
-                                    $resource = \App\Models\Resource::find($resourceId);
-                                    if (!$resource) {
-                                        return '⚠️ Resource not found';
-                                    }
+                                            $baseUnit = $resource->base_unit;
+                                            $conversionFactor = self::getConversionFactor($receiptUnit, $baseUnit);
+                                            
+                                            if ($conversionFactor == 1) {
+                                                return "Price per base unit: AED {$unitPrice}";
+                                            } else {
+                                                $pricePerBaseUnit = $unitPrice / $conversionFactor;
+                                                return "Price per {$receiptUnit}: AED {$unitPrice} → **Price per {$baseUnit}: AED " . number_format($pricePerBaseUnit, 2) . "**";
+                                            }
+                                        } catch (\Exception $e) {
+                                            return '';
+                                        }
+                                    })
+                                    ->visible(fn ($get) => $get('unit_price') && $get('receipt_unit') && $get('resource_id'))
+                                    ->columnSpanFull(),
 
-                                    $baseUnit = $resource->base_unit;
-                                    $conversionFactor = self::getConversionFactor($receiptUnit, $baseUnit);
-                                    $convertedQty = $quantity * $conversionFactor;
-
-                                    if ($conversionFactor == 1) {
-                                        return "✅ **No conversion needed** - Receiving in base unit ({$baseUnit})";
-                                    } else {
-                                        return "📊 **Conversion:** {$quantity} {$receiptUnit} = **" . number_format($convertedQty, 3) . " {$baseUnit}** (will be stored in database)";
-                                    }
-                                } catch (\Exception $e) {
-                                    return '⚠️ Error calculating conversion: ' . $e->getMessage();
-                                }
-                            })
-                            ->visible(fn ($get) => $get('quantity_received') && $get('receipt_unit') && $get('resource_id'))
-                            ->columnSpanFull(),
-
-                        Forms\Components\TextInput::make('unit_price')
-                            ->label('Unit Price')
-                            ->helperText(fn ($get) => 'Price per ' . ($get('receipt_unit') ?? 'unit'))
-                            ->required()
-                            ->numeric()
-                            ->minValue(0)
-                            ->step(0.01)
-                            ->live()
-                            ->reactive()
-                            ->afterStateUpdated(function ($state, $set, $get) {
-                                $quantity = $get('quantity_received');
-                                if ($quantity && $state) {
-                                    $set('total_value', round($quantity * $state, 2));
-                                }
-                            })
-                            ->columnSpan(1),
-
-                        Forms\Components\Placeholder::make('conversion_price_info')
-                            ->content(function ($get) {
-                                $quantity = $get('quantity_received');
-                                $unitPrice = $get('unit_price');
-                                $receiptUnit = $get('receipt_unit');
-                                $resourceId = $get('resource_id');
-                                
-                                if (!$quantity || !$unitPrice || !$receiptUnit || !$resourceId) {
-                                    return '';
-                                }
-
-                                try {
-                                    $resource = \App\Models\Resource::find($resourceId);
-                                    if (!$resource) {
-                                        return '';
-                                    }
-
-                                    $baseUnit = $resource->base_unit;
-                                    $conversionFactor = self::getConversionFactor($receiptUnit, $baseUnit);
-                                    
-                                    if ($conversionFactor == 1) {
-                                        return "Price per base unit: AED {$unitPrice}";
-                                    } else {
-                                        $pricePerBaseUnit = $unitPrice / $conversionFactor;
-                                        return "Price per {$receiptUnit}: AED {$unitPrice} → **Price per {$baseUnit}: AED " . number_format($pricePerBaseUnit, 2) . "**";
-                                    }
-                                } catch (\Exception $e) {
-                                    return '';
-                                }
-                            })
-                            ->visible(fn ($get) => $get('unit_price') && $get('receipt_unit') && $get('resource_id'))
-                            ->columnSpanFull(),
-
-                        Forms\Components\TextInput::make('total_value')
-                            ->label('Total Value (Receipt Amount)')
-                            ->disabled()
-                            ->dehydrated()
-                            ->numeric()
-                            ->step(0.01)
-                            ->columnSpan(1),
-                    ])
-                    ->columns(2),
+                                Forms\Components\TextInput::make('total_value')
+                                    ->label('Total Value')
+                                    ->disabled()
+                                    ->dehydrated()
+                                    ->numeric()
+                                    ->step(0.01)
+                                    ->columnSpan(2),
+                            ])
+                            ->columns(4)
+                            ->minItems(1)
+                            ->addActionLabel('➕ Add Item'),
+                    ]),
 
                 Forms\Components\Section::make('Additional Details')
                     ->schema([
                         Forms\Components\TextInput::make('delivery_reference')
                             ->label('Delivery Reference / Tracking Number')
-                            ->placeholder('e.g., Shipment #, AWB, Invoice Qty, etc.')
-                            ->maxLength(255)
-                            ->columnSpan('full'),
+                            ->placeholder('e.g., Shipment #, AWB, Invoice #, etc.')
+                            ->maxLength(255),
 
                         Forms\Components\Textarea::make('notes')
                             ->label('Notes / Remarks')
                             ->rows(3)
-                            ->placeholder('e.g., "Damaged 5 units", "Missing items", etc.')
-                            ->columnSpan('full'),
+                            ->placeholder('e.g., "Damaged 5 units", "Quality inspection needed", etc.'),
                     ])
                     ->collapsed(),
             ]);
@@ -236,30 +248,35 @@ class GoodsReceiptNoteResource extends Resource
                     ->searchable()
                     ->sortable(),
 
-                Tables\Columns\TextColumn::make('resource.name')
-                    ->label('Resource/Item')
+                Tables\Columns\TextColumn::make('lineItems')
+                    ->label('Items')
+                    ->formatStateUsing(function ($record) {
+                        $items = $record->lineItems ?? [];
+                        if ($items->isEmpty()) {
+                            return '—';
+                        }
+                        $count = $items->count();
+                        $resources = $items->map(fn ($item) => $item->resource?->name ?? 'Unknown')->join(', ', ' & ');
+                        return "{$count} item" . ($count !== 1 ? 's' : '') . ": {$resources}";
+                    })
+                    ->limit(40),
+
+                Tables\Columns\TextColumn::make('lineItems_total_value')
+                    ->label('Total Value')
+                    ->formatStateUsing(function ($record) {
+                        $total = $record->lineItems?->sum('total_value') ?? 0;
+                        return 'AED ' . number_format($total, 2);
+                    })
+                    ->alignment('right'),
+
+                Tables\Columns\TextColumn::make('project.name')
+                    ->label('Project')
                     ->searchable()
                     ->sortable()
-                    ->limit(25),
-
-                Tables\Columns\TextColumn::make('quantity_received')
-                    ->label('Qty Received')
-                    ->numeric(decimalPlaces: 2)
-                    ->sortable()
-                    ->alignment('right'),
-
-                Tables\Columns\TextColumn::make('unit_price')
-                    ->label('Unit Price')
-                    ->money('AED')
-                    ->sortable()
-                    ->alignment('right')
-                    ->toggleable(isToggledHiddenByDefault: true),
-
-                Tables\Columns\TextColumn::make('total_value')
-                    ->label('Total Value')
-                    ->money('AED')
-                    ->sortable()
-                    ->alignment('right'),
+                    ->color('success')
+                    ->badge()
+                    ->default('Central Hub')
+                    ->toggleable(isToggledHiddenByDefault: false),
 
                 Tables\Columns\TextColumn::make('receipt_date')
                     ->label('Receipt Date')
@@ -286,9 +303,9 @@ class GoodsReceiptNoteResource extends Resource
                     ->preload()
                     ->searchable(),
 
-                Tables\Filters\SelectFilter::make('resource_id')
-                    ->label('Resource')
-                    ->relationship('resource', 'name')
+                Tables\Filters\SelectFilter::make('project_id')
+                    ->label('Allocated Project')
+                    ->relationship('project', 'name')
                     ->preload()
                     ->searchable(),
 
