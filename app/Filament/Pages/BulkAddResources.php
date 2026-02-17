@@ -62,21 +62,13 @@ class BulkAddResources extends Page implements Forms\Contracts\HasForms
                         Select::make('base_unit')
                             ->label('Base Unit')
                             ->required()
-                            ->options([
-                                'kg' => 'Kilogram (kg)',
-                                'g' => 'Gram (g)',
-                                'ton' => 'Ton',
-                                'liter' => 'Liter',
-                                'ml' => 'Milliliter (ml)',
-                                'gallon' => 'Gallon',
-                                'm' => 'Meter (m)',
-                                'cm' => 'Centimeter (cm)',
-                                'ft' => 'Feet (ft)',
-                                'pieces' => 'Pieces',
-                                'box' => 'Box',
-                                'bag' => 'Bag',
-                                'dozen' => 'Dozen',
-                            ])
+                            ->options(function () {
+                                return \App\Models\Unit::all()
+                                    ->pluck('name', 'code')
+                                    ->mapWithKeys(function ($name, $code) {
+                                        return [$code => "{$name} ({$code})"];
+                                    });
+                            })
                             ->searchable()
                             ->default('pieces'),
 

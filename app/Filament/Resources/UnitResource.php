@@ -72,30 +72,35 @@ class UnitResource extends Resource
                     ->columns(2),
 
                 Forms\Components\Section::make('Unit Conversions')
-                    ->description('How this unit converts to other units')
+                    ->description('Define how this unit converts to other measurement units')
                     ->icon('heroicon-o-arrow-path')
                     ->schema([
+                        // Info box explaining conversions
+                        Forms\Components\View::make('conversions.help-text'),
+
                         Forms\Components\Repeater::make('conversionsFrom')
                             ->relationship('conversionsFrom')
-                            ->label('')
+                            ->label('Conversion Rules')
+                            ->minItems(0)
                             ->schema([
                                 Forms\Components\Grid::make(2)->schema([
                                     Forms\Components\TextInput::make('conversion_factor')
-                                        ->label('Multiply By')
+                                        ->label('Conversion Factor')
                                         ->numeric()
-                                        ->step(0.0001)
-                                        ->required(),
+                                        ->required()
+                                        ->helperText('How many of the "To Unit" equal one unit of this unit. Example: 1 kg = 1000 g, so enter 1000'),
 
                                     Forms\Components\Select::make('to_unit_id')
-                                        ->label('To Unit')
+                                        ->label('Converts To')
                                         ->relationship('toUnit', 'name')
                                         ->searchable()
                                         ->preload()
-                                        ->required(),
+                                        ->required()
+                                        ->helperText('Select another unit of the same type'),
                                 ]),
                             ])
                             ->defaultItems(0)
-                            ->addActionLabel('➕ Add Conversion'),
+                            ->addActionLabel('➕ Add New Conversion'),
                     ]),
             ]);
     }

@@ -24,25 +24,33 @@ class UnitConversionResource extends Resource
     {
         return $form
             ->schema([
-                Forms\Components\Select::make('from_unit_id')
-                    ->label('From Unit')
-                    ->relationship('fromUnit', 'name')
-                    ->required()
-                    ->searchable()
-                    ->preload(),
+                Forms\Components\View::make('conversions.direct-help-text'),
 
-                Forms\Components\TextInput::make('conversion_factor')
-                    ->label('Multiply By')
-                    ->numeric()
-                    ->step(0.0001)
-                    ->required(),
+                Forms\Components\Section::make('Conversion Definition')
+                    ->schema([
+                        Forms\Components\Select::make('from_unit_id')
+                            ->label('Convert From (Source Unit)')
+                            ->relationship('fromUnit', 'name')
+                            ->required()
+                            ->searchable()
+                            ->preload()
+                            ->helperText('Select the unit you are converting FROM. Example: if converting kg to g, select Kilogram'),
 
-                Forms\Components\Select::make('to_unit_id')
-                    ->label('To Unit')
-                    ->relationship('toUnit', 'name')
-                    ->required()
-                    ->searchable()
-                    ->preload(),
+                        Forms\Components\TextInput::make('conversion_factor')
+                            ->label('Conversion Factor')
+                            ->numeric()
+                            ->required()
+                            ->helperText('Enter how many of the target unit equal 1 of the source unit. Example: for kg → g, enter 1000'),
+
+                        Forms\Components\Select::make('to_unit_id')
+                            ->label('Convert To (Target Unit)')
+                            ->relationship('toUnit', 'name')
+                            ->required()
+                            ->searchable()
+                            ->preload()
+                            ->helperText('Select the unit you are converting TO. Must be the same type as the source unit.'),
+                    ])
+                    ->columns(1),
             ]);
     }
 
@@ -51,19 +59,21 @@ class UnitConversionResource extends Resource
         return $table
             ->columns([
                 Tables\Columns\TextColumn::make('fromUnit.code')
-                    ->label('From')
+                    ->label('From Unit')
                     ->badge()
-                    ->color('primary'),
+                    ->color('primary')
+                    ->description(fn ($record) => $record->fromUnit?->name),
 
                 Tables\Columns\TextColumn::make('conversion_factor')
-                    ->label('×')
-                    ->alignment('center')
-                    ->formatStateUsing(fn ($state) => number_format($state, 4)),
+                    ->label('Conversion Rule')
+                    ->formatStateUsing(fn ($state, $record) => "1 {$record->fromUnit->code} = {$state} {$record->toUnit->code}")
+                    ->description('Conversion factor'),
 
                 Tables\Columns\TextColumn::make('toUnit.code')
-                    ->label('To')
+                    ->label('To Unit')
                     ->badge()
-                    ->color('success'),
+                    ->color('success')
+                    ->description(fn ($record) => $record->toUnit?->name),
 
                 Tables\Columns\TextColumn::make('fromUnit.unit_type')
                     ->label('Type')
@@ -80,7 +90,19 @@ class UnitConversionResource extends Resource
                     ->label('Created')
                     ->dateTime('d M, Y'),
             ])
-            ->filters([])
+            ->filters([
+                Tables\Filters\SelectFilter::make('fromUnit.unit_type')
+                    ->label('Conversion Type')
+                    ->relationship('fromUnit', 'unit_type')
+                    ->options([
+                        'weight' => 'Weight',
+                        'length' => 'Length',
+                        'volume' => 'Volume',
+                        'area' => 'Area',
+                        'count' => 'Count',
+                        'custom' => 'Custom',
+                    ]),
+            ])
             ->actions([
                 Tables\Actions\EditAction::make(),
                 Tables\Actions\DeleteAction::make(),
