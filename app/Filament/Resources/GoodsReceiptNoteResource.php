@@ -5,6 +5,7 @@ namespace App\Filament\Resources;
 use App\Models\GoodsReceiptNote;
 use App\Models\InventoryTransaction;
 use App\Services\InventoryTransactionService;
+use App\Services\UnitConversionService;
 use Filament\Forms;
 use Filament\Forms\Form;
 use Filament\Resources\Resource;
@@ -94,7 +95,13 @@ class GoodsReceiptNoteResource extends Resource
                                             ->preload()
                                             ->required()
                                             ->live()
-                                            ->columnSpan(1),
+                                            ->columnSpan(1)
+                                            ->extraAttributes([
+                                                'data-auto-select-on-tab' => true,
+                                            ])
+                                            ->afterStateUpdated(function (callable $set) {
+                                                // This ensures live validation runs
+                                            }),
 
                                         Forms\Components\TextInput::make('quantity_received')
                                             ->label('Quantity')
@@ -104,6 +111,9 @@ class GoodsReceiptNoteResource extends Resource
                                             ->step(0.001)
                                             ->live()
                                             ->reactive()
+                                            ->extraAttributes([
+                                                'data-focus-order' => '1',
+                                            ])
                                             ->afterStateUpdated(function ($state, $set, $get) {
                                                 $unitPrice = $get('unit_price');
                                                 if ($state && $unitPrice) {
@@ -119,6 +129,9 @@ class GoodsReceiptNoteResource extends Resource
                                             ->searchable()
                                             ->live()
                                             ->reactive()
+                                            ->extraAttributes([
+                                                'data-focus-order' => '2',
+                                            ])
                                             ->columnSpan(1),
 
                                         Forms\Components\TextInput::make('unit_price')
@@ -366,247 +379,23 @@ class GoodsReceiptNoteResource extends Resource
             }
 
             $baseUnit = $resource->base_unit;
-            return self::getUnitConversionOptions($baseUnit);
+            $service = new UnitConversionService();
+            return $service->getConversionOptions($baseUnit);
         } catch (\Exception $e) {
             Log::error('Error getting unit options: ' . $e->getMessage());
             return [];
         }
     }
 
-    /**
-     * Get available unit conversion options based on base unit
-     */
-    protected static function getUnitConversionOptions(string $baseUnit): array
-    {
-        $conversionMap = [
-            // Weight units
-            'kg' => [
-                'kg' => 'Kilograms (kg) - Base Unit',
-                'g' => 'Grams (g)',
-                'mg' => 'Milligrams (mg)',
-                'ton' => 'Metric Tons (ton)',
-                'lb' => 'Pounds (lb)',
-                'oz' => 'Ounces (oz)',
-            ],
-            'g' => [
-                'g' => 'Grams (g) - Base Unit',
-                'kg' => 'Kilograms (kg)',
-                'mg' => 'Milligrams (mg)',
-                'ton' => 'Metric Tons (ton)',
-                'lb' => 'Pounds (lb)',
-                'oz' => 'Ounces (oz)',
-            ],
-            'ton' => [
-                'ton' => 'Metric Tons (ton) - Base Unit',
-                'kg' => 'Kilograms (kg)',
-                'g' => 'Grams (g)',
-                'lb' => 'Pounds (lb)',
-            ],
-            'lb' => [
-                'lb' => 'Pounds (lb) - Base Unit',
-                'kg' => 'Kilograms (kg)',
-                'oz' => 'Ounces (oz)',
-                'ton' => 'Metric Tons (ton)',
-            ],
-            'liter' => [
-                'liter' => 'Liters (L) - Base Unit',
-                'ml' => 'Milliliters (ml)',
-                'gallon' => 'Gallons (gal)',
-                'm3' => 'Cubic Meters (m³)',
-            ],
-            'liters' => [
-                'liters' => 'Liters (L) - Base Unit',
-                'ml' => 'Milliliters (ml)',
-                'gallon' => 'Gallons (gal)',
-                'm3' => 'Cubic Meters (m³)',
-            ],
-            'ml' => [
-                'ml' => 'Milliliters (ml) - Base Unit',
-                'liter' => 'Liters (L)',
-                'liters' => 'Liters (L)',
-                'gallon' => 'Gallons (gal)',
-            ],
-            'm3' => [
-                'm3' => 'Cubic Meters (m³) - Base Unit',
-                'liter' => 'Liters (L)',
-                'liters' => 'Liters (L)',
-                'gallon' => 'Gallons (gal)',
-            ],
-            'gallon' => [
-                'gallon' => 'Gallons (gal) - Base Unit',
-                'liter' => 'Liters (L)',
-                'liters' => 'Liters (L)',
-                'ml' => 'Milliliters (ml)',
-            ],
-            'm' => [
-                'm' => 'Meters (m) - Base Unit',
-                'cm' => 'Centimeters (cm)',
-                'mm' => 'Millimeters (mm)',
-                'km' => 'Kilometers (km)',
-                'ft' => 'Feet (ft)',
-                'inch' => 'Inches (in)',
-            ],
-            'cm' => [
-                'cm' => 'Centimeters (cm) - Base Unit',
-                'm' => 'Meters (m)',
-                'mm' => 'Millimeters (mm)',
-                'ft' => 'Feet (ft)',
-                'inch' => 'Inches (in)',
-            ],
-            'mm' => [
-                'mm' => 'Millimeters (mm) - Base Unit',
-                'm' => 'Meters (m)',
-                'cm' => 'Centimeters (cm)',
-                'inch' => 'Inches (in)',
-            ],
-            'ft' => [
-                'ft' => 'Feet (ft) - Base Unit',
-                'm' => 'Meters (m)',
-                'cm' => 'Centimeters (cm)',
-                'inch' => 'Inches (in)',
-            ],
-            'inch' => [
-                'inch' => 'Inches (in) - Base Unit',
-                'm' => 'Meters (m)',
-                'cm' => 'Centimeters (cm)',
-                'ft' => 'Feet (ft)',
-            ],
-            'sqm' => [
-                'sqm' => 'Square Meters (m²) - Base Unit',
-                'sqft' => 'Square Feet (ft²)',
-                'sqcm' => 'Square Centimeters (cm²)',
-            ],
-            'sqft' => [
-                'sqft' => 'Square Feet (ft²) - Base Unit',
-                'sqm' => 'Square Meters (m²)',
-            ],
-            'sqcm' => [
-                'sqcm' => 'Square Centimeters (cm²) - Base Unit',
-                'sqm' => 'Square Meters (m²)',
-            ],
-            'piece' => [
-                'piece' => 'Pieces - Base Unit',
-                'dozen' => 'Dozen (12 pieces)',
-                'box' => 'Box',
-                'carton' => 'Carton',
-                'pallet' => 'Pallet',
-                'bundle' => 'Bundle',
-                'set' => 'Set',
-                'pair' => 'Pair (2 pieces)',
-            ],
-            'pieces' => [
-                'pieces' => 'Pieces - Base Unit',
-                'dozen' => 'Dozen (12 pieces)',
-                'box' => 'Box',
-                'carton' => 'Carton',
-                'pallet' => 'Pallet',
-                'bundle' => 'Bundle',
-                'set' => 'Set',
-                'pair' => 'Pair (2 pieces)',
-            ],
-            'unit' => [
-                'unit' => 'Units - Base Unit',
-                'dozen' => 'Dozen (12 units)',
-                'box' => 'Box',
-                'carton' => 'Carton',
-            ],
-            'dozen' => [
-                'dozen' => 'Dozen - Base Unit',
-                'piece' => 'Pieces',
-                'pieces' => 'Pieces',
-            ],
-            'box' => [
-                'box' => 'Box - Base Unit',
-                'carton' => 'Carton',
-                'pallet' => 'Pallet',
-            ],
-            'carton' => [
-                'carton' => 'Carton - Base Unit',
-                'box' => 'Box',
-                'pallet' => 'Pallet',
-            ],
-            'pallet' => [
-                'pallet' => 'Pallet - Base Unit',
-                'box' => 'Box',
-                'carton' => 'Carton',
-            ],
-            'bag' => [
-                'bag' => 'Bags - Base Unit',
-                'ton' => 'Metric Tons',
-                'kg' => 'Kilograms',
-            ],
-            'sack' => [
-                'sack' => 'Sacks - Base Unit',
-                'ton' => 'Metric Tons',
-                'kg' => 'Kilograms',
-            ],
-            'roll' => [
-                'roll' => 'Rolls - Base Unit',
-                'dozen' => 'Dozen Rolls',
-            ],
-            'sheet' => [
-                'sheet' => 'Sheets - Base Unit',
-                'dozen' => 'Dozen Sheets',
-                'bundle' => 'Bundle',
-            ],
-            'panel' => [
-                'panel' => 'Panels - Base Unit',
-                'dozen' => 'Dozen Panels',
-                'bundle' => 'Bundle',
-            ],
-            'tile' => [
-                'tile' => 'Tiles - Base Unit',
-                'box' => 'Box',
-                'carton' => 'Carton',
-                'sqm' => 'Square Meters (coverage)',
-            ],
-            'bundle' => [
-                'bundle' => 'Bundles - Base Unit',
-                'piece' => 'Pieces',
-                'pieces' => 'Pieces',
-            ],
-            'set' => [
-                'set' => 'Sets - Base Unit',
-                'piece' => 'Pieces',
-                'pieces' => 'Pieces',
-            ],
-            'pair' => [
-                'pair' => 'Pairs - Base Unit',
-                'piece' => 'Pieces',
-                'pieces' => 'Pieces',
-            ],
-        ];
 
-        return $conversionMap[strtolower($baseUnit)] ?? [
-            $baseUnit => $baseUnit . ' - Base Unit',
-        ];
-    }
 
     /**
-     * Get conversion factor from one unit to another
+     * Get conversion factor from one unit to another using the database-driven service
      */
     protected static function getConversionFactor(string $fromUnit, string $toUnit): float
     {
-        $fromUnit = strtolower($fromUnit);
-        $toUnit = strtolower($toUnit);
-
-        if ($fromUnit === $toUnit) {
-            return 1.0;
-        }
-
-        $conversions = [
-            'kg' => 1.0, 'g' => 0.001, 'mg' => 0.000001, 'ton' => 1000.0, 'lb' => 0.453592, 'oz' => 0.0283495,
-            'liter' => 1.0, 'liters' => 1.0, 'ml' => 0.001, 'gallon' => 3.78541, 'm3' => 1000.0,
-            'm' => 1.0, 'cm' => 0.01, 'mm' => 0.001, 'km' => 1000.0, 'ft' => 0.3048, 'inch' => 0.0254,
-            'sqm' => 1.0, 'sqft' => 0.092903, 'sqcm' => 0.0001,
-            'piece' => 1.0, 'pieces' => 1.0, 'unit' => 1.0, 'dozen' => 12.0, 'box' => 1.0, 'carton' => 1.0,
-            'pallet' => 1.0, 'bag' => 1.0, 'sack' => 1.0, 'bundle' => 1.0, 'set' => 1.0, 'pair' => 2.0,
-            'roll' => 1.0, 'sheet' => 1.0, 'panel' => 1.0, 'tile' => 1.0,
-        ];
-
-        $fromFactor = $conversions[$fromUnit] ?? 1.0;
-        $toFactor = $conversions[$toUnit] ?? 1.0;
-
-        return $fromFactor / $toFactor;
+        $service = new UnitConversionService();
+        $factor = $service->getConversionFactor($fromUnit, $toUnit);
+        return $factor ?? 1.0;
     }
 }

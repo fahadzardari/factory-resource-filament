@@ -57,6 +57,10 @@ class AdminPanelProvider extends PanelProvider
                 Widgets\AccountWidget::class,
             ])
             ->sidebarCollapsibleOnDesktop()
+            ->renderHook(
+                'panels::body.end',
+                fn () => view('components.form-keyboard-nav')
+            )
             ->middleware([
                 EncryptCookies::class,
                 AddQueuedCookiesToResponse::class,

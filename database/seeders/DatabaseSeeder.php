@@ -10,10 +10,11 @@ class DatabaseSeeder extends Seeder
     {
         $this->call([
             DemoInventorySeeder::class,      // Create users first
+            UnitSeeder::class,               // Create units before resources
             SupplierSeeder::class,
-            ResourceSeeder::class,
             ProjectSeeder::class,
-            GoodsReceiptNoteSeeder::class,   // Now GoodsReceiptNoteSeeder has users available
+            ResourceSeeder::class,           // Now resources can validate units
+            // GoodsReceiptNoteSeeder::class,   // Now GoodsReceiptNoteSeeder has users available
         ]);
     }
 }

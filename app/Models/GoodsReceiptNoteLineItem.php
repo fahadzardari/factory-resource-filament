@@ -2,6 +2,7 @@
 
 namespace App\Models;
 
+use App\Services\UnitConversionService;
 use Illuminate\Database\Eloquent\Factories\HasFactory;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
@@ -78,50 +79,12 @@ class GoodsReceiptNoteLineItem extends Model
     }
 
     /**
-     * Get unit conversion factor
+     * Get unit conversion factor using database-driven service
      */
     public function getConversionFactor(string $fromUnit, string $toUnit): float
     {
-        if ($fromUnit === $toUnit) {
-            return 1.0;
-        }
-
-        // Weight conversions
-        $weightConversions = [
-            'mg' => 0.000001, 'g' => 0.001, 'kg' => 1, 'ton' => 1000,
-            'oz' => 0.0283495, 'lb' => 0.453592,
-        ];
-
-        // Volume conversions (to liter)
-        $volumeConversions = [
-            'ml' => 0.001, 'liter' => 1, 'liters' => 1, 'gallon' => 3.78541, 'm3' => 1000,
-        ];
-
-        // Length conversions (to meter)
-        $lengthConversions = [
-            'mm' => 0.001, 'cm' => 0.01, 'm' => 1, 'km' => 1000, 'ft' => 0.3048, 'inch' => 0.0254,
-        ];
-
-        // Area conversions (to sqm)
-        $areaConversions = [
-            'sqcm' => 0.0001, 'sqm' => 1, 'sqft' => 0.092903,
-        ];
-
-        // Try to find conversion factors in the respective unit groups
-        if (isset($weightConversions[$fromUnit]) && isset($weightConversions[$toUnit])) {
-            return $weightConversions[$fromUnit] / $weightConversions[$toUnit];
-        }
-        if (isset($volumeConversions[$fromUnit]) && isset($volumeConversions[$toUnit])) {
-            return $volumeConversions[$fromUnit] / $volumeConversions[$toUnit];
-        }
-        if (isset($lengthConversions[$fromUnit]) && isset($lengthConversions[$toUnit])) {
-            return $lengthConversions[$fromUnit] / $lengthConversions[$toUnit];
-        }
-        if (isset($areaConversions[$fromUnit]) && isset($areaConversions[$toUnit])) {
-            return $areaConversions[$fromUnit] / $areaConversions[$toUnit];
-        }
-
-        // Default: 1 (no conversion needed)
-        return 1.0;
+        $service = new UnitConversionService();
+        $factor = $service->getConversionFactor($fromUnit, $toUnit);
+        return $factor ?? 1.0;
     }
 }
