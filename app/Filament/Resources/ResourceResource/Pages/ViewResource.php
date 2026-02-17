@@ -724,13 +724,34 @@ class ViewResource extends ViewRecord
     }
 
     /**
-     * Get conversion factor from purchase unit to base unit
+     * Get conversion factor from one unit to another (supports bidirectional)
+     * This method properly handles reciprocal conversions via the service
      */
     protected function getConversionFactor(string $fromUnit, string $toUnit): float
     {
-        $service = new UnitConversionService();
-        $factor = $service->getConversionFactor($fromUnit, $toUnit);
-        return $factor ?? 1.0;
+        // Handle case-insensitive unit codes
+        $fromUnit = strtolower(trim($fromUnit));
+        $toUnit = strtolower(trim($toUnit));
+        
+        // Quick return for same units
+        if ($fromUnit === $toUnit) {
+            return 1.0;
+        }
+        
+        try {
+            $service = new UnitConversionService();
+            $factor = $service->getConversionFactor($fromUnit, $toUnit);
+            
+            // Service returns null if no conversion found
+            if ($factor === null) {
+                return 1.0;
+            }
+            
+            return (float) $factor;
+        } catch (\Exception $e) {
+            \Illuminate\Support\Facades\Log::error('Conversion error: ' . $e->getMessage());
+            return 1.0;
+        }
     }
 }
 

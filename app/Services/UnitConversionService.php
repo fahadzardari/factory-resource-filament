@@ -24,17 +24,19 @@ class UnitConversionService
     /**
      * Get all available conversion options for a specific unit
      * Returns an array of unit codes → display names for form dropdowns
+     * SUPPORTS BIDIRECTIONAL: If A→B exists, B can also convert to A
      *
      * @param int|string $unitIdOrCode Unit ID or code (e.g., 'kg', 1, etc.)
      * @return array Format: ['kg' => 'Kilograms (kg)', 'g' => 'Grams (g)', ...]
      */
     public function getConversionOptions($unitIdOrCode): array
     {
-        // Get the unit (by ID or code)
+        // Get the unit (by ID or code) - case-insensitive for codes
         if (is_int($unitIdOrCode) || is_numeric($unitIdOrCode)) {
             $unit = Unit::find($unitIdOrCode);
         } else {
-            $unit = Unit::where('code', $unitIdOrCode)->first();
+            // Case-insensitive code lookup
+            $unit = Unit::whereRaw('LOWER(code) = ?', [strtolower(trim($unitIdOrCode))])->first();
         }
 
         if (!$unit) {
@@ -46,14 +48,28 @@ class UnitConversionService
             $unit->code => "{$unit->name} ({$unit->code}) - Base Unit",
         ];
 
-        // Add all units this can convert to (via conversionsFrom)
-        $conversions = $unit->conversionsFrom()
+        // Add all units this can convert TO (direct: from_unit_id = this unit)
+        $directConversions = $unit->conversionsFrom()
             ->with('toUnit')
             ->get();
 
-        foreach ($conversions as $conversion) {
+        foreach ($directConversions as $conversion) {
             $toUnit = $conversion->toUnit;
             $options[$toUnit->code] = "{$toUnit->name} ({$toUnit->code})";
+        }
+
+        // Also add units that can convert TO this unit (reverse: to_unit_id = this unit)
+        // This enables bidirectional conversion without requiring manual reciprocal entry
+        $reverseConversions = $unit->conversionsTo()
+            ->with('fromUnit')
+            ->get();
+
+        foreach ($reverseConversions as $conversion) {
+            $fromUnit = $conversion->fromUnit;
+            // Only add if not already in options (to avoid duplicates)
+            if (!isset($options[$fromUnit->code])) {
+                $options[$fromUnit->code] = "{$fromUnit->name} ({$fromUnit->code})";
+            }
         }
 
         return $options;
@@ -61,7 +77,8 @@ class UnitConversionService
 
     /**
      * Get conversion factor between two units
-     * If no direct conversion exists, returns null
+     * SUPPORTS BIDIRECTIONAL: If A→B with factor X exists, B→A will use 1/X
+     * No need to manually create reciprocal conversions
      *
      * @param string $fromUnitCode e.g., 'kg'
      * @param string $toUnitCode e.g., 'g'
@@ -69,25 +86,47 @@ class UnitConversionService
      */
     public function getConversionFactor(string $fromUnitCode, string $toUnitCode): ?float
     {
+        // Normalize codes to lowercase for case-insensitive matching
+        $fromUnitCode = strtolower(trim($fromUnitCode));
+        $toUnitCode = strtolower(trim($toUnitCode));
+        
         // Same unit = factor of 1
         if ($fromUnitCode === $toUnitCode) {
             return 1.0;
         }
 
-        // Look up conversion in database
-        $fromUnit = Unit::where('code', $fromUnitCode)->first();
-        $toUnit = Unit::where('code', $toUnitCode)->first();
+        // Look up conversion in database (case-insensitive)
+        $fromUnit = Unit::whereRaw('LOWER(code) = ?', [$fromUnitCode])->first();
+        $toUnit = Unit::whereRaw('LOWER(code) = ?', [$toUnitCode])->first();
 
         if (!$fromUnit || !$toUnit) {
             return null;
         }
 
-        // Find conversion record
+        // Find DIRECT conversion record (from_unit → to_unit)
         $conversion = UnitConversion::where('from_unit_id', $fromUnit->id)
             ->where('to_unit_id', $toUnit->id)
             ->first();
 
-        return $conversion ? (float) $conversion->conversion_factor : null;
+        if ($conversion) {
+            return (float) $conversion->conversion_factor;
+        }
+
+        // BIDIRECTIONAL: Check for REVERSE conversion (to_unit → from_unit)
+        // If it exists, use the reciprocal (1/factor)
+        $reverseConversion = UnitConversion::where('from_unit_id', $toUnit->id)
+            ->where('to_unit_id', $fromUnit->id)
+            ->first();
+
+        if ($reverseConversion) {
+            $reverseFactor = (float) $reverseConversion->conversion_factor;
+            // Avoid division by zero
+            if ($reverseFactor != 0) {
+                return 1.0 / $reverseFactor;
+            }
+        }
+
+        return null;
     }
 
     /**
@@ -123,7 +162,7 @@ class UnitConversionService
      */
     public function getUnitTypesForUnit(string $unitCode): Collection
     {
-        $unit = Unit::where('code', $unitCode)->first();
+        $unit = Unit::whereRaw('LOWER(code) = ?', [strtolower(trim($unitCode))])->first();
 
         if (!$unit) {
             return collect();
@@ -141,8 +180,8 @@ class UnitConversionService
      */
     public function areConvertible(string $unitCode1, string $unitCode2): bool
     {
-        $unit1 = Unit::where('code', $unitCode1)->first();
-        $unit2 = Unit::where('code', $unitCode2)->first();
+        $unit1 = Unit::whereRaw('LOWER(code) = ?', [strtolower(trim($unitCode1))])->first();
+        $unit2 = Unit::whereRaw('LOWER(code) = ?', [strtolower(trim($unitCode2))])->first();
 
         if (!$unit1 || !$unit2) {
             return false;

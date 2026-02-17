@@ -158,7 +158,7 @@ class GoodsReceiptNoteResource extends Resource
                                         $resourceId = $get('resource_id');
                                         
                                         if (!$quantity || !$receiptUnit || !$resourceId) {
-                                            return '📝 Enter quantity and unit to see conversion';
+                                            return '📝 Enter quantity, unit, and resource to see conversion details';
                                         }
 
                                         try {
@@ -168,13 +168,26 @@ class GoodsReceiptNoteResource extends Resource
                                             }
 
                                             $baseUnit = $resource->base_unit;
+                                            $baseUnitObj = \App\Models\Unit::where('code', $baseUnit)->first();
+                                            
+                                            // Get conversion factor (works bidirectionally now)
                                             $conversionFactor = self::getConversionFactor($receiptUnit, $baseUnit);
+                                            
+                                            if ($conversionFactor === null) {
+                                                return "⚠️ No conversion found between {$receiptUnit} and {$baseUnit}";
+                                            }
+
                                             $convertedQty = $quantity * $conversionFactor;
 
                                             if ($conversionFactor == 1) {
-                                                return "✅ **No conversion** - Base unit: {$baseUnit}";
+                                                return "✅ **No conversion needed** - {$receiptUnit} is the base unit";
                                             } else {
-                                                return "📊 {$quantity} {$receiptUnit} = **" . number_format($convertedQty, 3) . " {$baseUnit}** (stored in database)";
+                                                $receiptUnitObj = \App\Models\Unit::where('code', $receiptUnit)->first();
+                                                $receiptUnitName = $receiptUnitObj?->name ?? $receiptUnit;
+                                                $baseUnitName = $baseUnitObj?->name ?? $baseUnit;
+                                                
+                                                return "📊 **Conversion Rule:** 1 {$receiptUnit} = {$conversionFactor} {$baseUnit}\n\n"
+                                                    . "**Your Entry:** {$quantity} {$receiptUnit} = **" . number_format($convertedQty, 4) . " {$baseUnit}**";
                                             }
                                         } catch (\Exception $e) {
                                             return '⚠️ Conversion error: ' . $e->getMessage();
