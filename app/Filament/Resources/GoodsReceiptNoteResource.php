@@ -329,7 +329,7 @@ class GoodsReceiptNoteResource extends Resource
                     }),
             ])
             ->actions([
-                Tables\Actions\EditAction::make(),
+                // Tables\Actions\EditAction::make(),  // Commented out - GRN editing disabled
                 Tables\Actions\DeleteAction::make()
                     ->requiresConfirmation(),
             ])
