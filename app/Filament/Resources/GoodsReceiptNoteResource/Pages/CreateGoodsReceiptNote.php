@@ -16,6 +16,7 @@ use Illuminate\Support\Facades\Log;
 class CreateGoodsReceiptNote extends CreateRecord
 {
     protected static string $resource = GoodsReceiptNoteResource::class;
+    protected static string $view = 'filament.resources.goods-receipt-note-resource.pages.create-goods-receipt-note';
 
     protected function mutateFormDataBeforeSave(array $data): array
     {

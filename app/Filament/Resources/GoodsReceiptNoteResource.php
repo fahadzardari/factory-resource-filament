@@ -81,10 +81,11 @@ class GoodsReceiptNoteResource extends Resource
                     ->columns(2),
 
                 Forms\Components\Section::make('Line Items')
-                    ->description('Add items received in this delivery. Each item can be in a different unit - will be auto-converted to base unit.')
+                    ->description('Add items received in this delivery. Each item can be in a different unit - will be auto-converted to base unit. Press Ctrl+Enter to add items.')
                     ->schema([
                         Forms\Components\Repeater::make('lineItems')
                             ->relationship('lineItems')
+                            ->addActionLabel('➕ Add Item (or press Ctrl+Enter)')
                             ->schema([
                                 Forms\Components\Grid::make(4)
                                     ->schema([

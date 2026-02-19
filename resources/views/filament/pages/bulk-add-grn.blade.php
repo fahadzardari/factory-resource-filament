@@ -24,6 +24,10 @@
                 </li>
                 <li class="flex items-start">
                     <span class="mr-2">•</span>
+                    <span><strong>Keyboard Navigation:</strong> Press <kbd class="bg-gray-200 dark:bg-gray-700 px-2 py-1 rounded text-sm">Ctrl+Enter</kbd> to add a new row from anywhere</span>
+                </li>
+                <li class="flex items-start">
+                    <span class="mr-2">•</span>
                     <span>Click "Create All GRNs" to process only the filled rows</span>
                 </li>
             </ul>
@@ -52,3 +56,126 @@
             </form>
     </div>
 </x-filament-panels::page>
+
+<script>
+(function() {
+    'use strict';
+    
+    // Track repeater mutations to auto-focus new items
+    function initBulkGrnKeyboardNav() {
+        const repeaterContainer = document.querySelector('[data-repeater-key="grns"]')?.closest('[x-data]');
+        
+        if (!repeaterContainer) {
+            // Try again in 500ms if not found yet
+            setTimeout(initBulkGrnKeyboardNav, 500);
+            return;
+        }
+
+        // Handle Ctrl+Enter to add new row
+        document.addEventListener('keydown', (e) => {
+            if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
+                e.preventDefault();
+                
+                // Find and click the add button
+                const addButton = repeaterContainer.querySelector('[x-on\\:click*="addItem"], button[aria-label*="add"], [x-cloak] ~ button');
+                if (!addButton) {
+                    // Try alternative selector
+                    const buttons = repeaterContainer.querySelectorAll('button');
+                    const addBtn = Array.from(buttons).find(btn => 
+                        btn.textContent.includes('Add') || 
+                        btn.getAttribute('aria-label')?.includes('add')
+                    );
+                    if (addBtn) {
+                        addBtn.click();
+                        setTimeout(() => focusFirstFieldOfLastRow(), 150);
+                    }
+                } else {
+                    addButton.click();
+                    setTimeout(() => focusFirstFieldOfLastRow(), 150);
+                }
+            }
+        });
+
+        // Use MutationObserver to detect new repeater items and auto-focus first field
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach((mutation) => {
+                if (mutation.type === 'childList' && mutation.addedNodes.length > 0) {
+                    mutation.addedNodes.forEach((node) => {
+                        // Check if this is a repeater item
+                        if (node.nodeType === 1 && node.getAttribute?.('[x-data*="makeRepeaterItemData"]') !== null) {
+                            focusFirstFieldOfItem(node);
+                        }
+                    });
+                }
+            });
+        });
+
+        // Start observing the repeater container
+        observer.observe(repeaterContainer, {
+            childList: true,
+            subtree: true,
+            attributes: false
+        });
+
+        // Also handle when form is updated via Livewire
+        window.addEventListener('livewire:update', () => {
+            setTimeout(() => {
+                const lastRow = repeaterContainer?.querySelector('[x-data*="makeRepeaterItemData"]');
+                if (lastRow) {
+                    focusFirstFieldOfItem(lastRow);
+                }
+            }, 100);
+        });
+    }
+
+    function focusFirstFieldOfLastRow() {
+        const lastRow = document.querySelector('[x-data*="makeRepeaterItemData"]');
+        if (lastRow) {
+            focusFirstFieldOfItem(lastRow);
+        }
+    }
+
+    function focusFirstFieldOfItem(item) {
+        // Find select inputs first (for Supplier field), then text inputs
+        const selects = item.querySelectorAll('select');
+        const inputs = item.querySelectorAll('input[type="text"], input:not([type="hidden"])');
+        
+        const firstField = selects[0] || inputs[0];
+        
+        if (firstField) {
+            setTimeout(() => {
+                firstField.focus();
+                // For select elements, try to open if they're Filament selects
+                if (firstField.tagName === 'SELECT' && firstField.parentElement) {
+                    const triggerButton = firstField.nextElementSibling?.querySelector('[role="button"]');
+                    if (triggerButton) {
+                        triggerButton.click();
+                    }
+                }
+            }, 50);
+        }
+    }
+
+    // Wait for page to be fully loaded and Livewire to be ready
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initBulkGrnKeyboardNav);
+    } else {
+        initBulkGrnKeyboardNav();
+    }
+
+    // Also initialize when Livewire navigation happens
+    window.addEventListener('livewire:navigated', initBulkGrnKeyboardNav);
+})();
+</script>
+
+<style>
+kbd {
+    display: inline-block;
+    padding: 3px 5px;
+    font-size: 11px;
+    border-radius: 3px;
+    border: 1px solid #ccc;
+    background: linear-gradient(to bottom, #f5f5f5, #f1f1f1);
+    box-shadow: inset 0 -1px 0 rgba(0, 0, 0, 0.25), 0 1px 0 rgba(0, 0, 0, 0.25);
+}
+</style>

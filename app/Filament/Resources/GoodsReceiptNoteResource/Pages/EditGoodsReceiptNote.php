@@ -10,6 +10,7 @@ use Filament\Notifications\Notification;
 class EditGoodsReceiptNote extends EditRecord
 {
     protected static string $resource = GoodsReceiptNoteResource::class;
+    protected static string $view = 'filament.resources.goods-receipt-note-resource.pages.edit-goods-receipt-note';
 
     protected function getHeaderActions(): array
     {

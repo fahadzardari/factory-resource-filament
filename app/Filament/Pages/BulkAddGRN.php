@@ -46,7 +46,7 @@ class BulkAddGRN extends Page implements Forms\Contracts\HasForms
     {
         return [
             Forms\Components\Section::make('Bulk Goods Receipt Entry')
-                ->description('Add multiple GRN records at once. Empty rows will be automatically skipped.')
+                ->description('Add multiple GRN records at once. Empty rows will be automatically skipped. Use Tab or Ctrl+Enter to add new rows.')
                 ->icon('heroicon-o-arrow-down-tray')
                 ->schema([
                     Forms\Components\Repeater::make('grns')
@@ -114,7 +114,7 @@ class BulkAddGRN extends Page implements Forms\Contracts\HasForms
                         ->columns(12)
                         ->defaultItems(5)
                         ->minItems(1)
-                        ->addActionLabel('➕ Add another GRN')
+                        ->addActionLabel('➕ Add another GRN (Ctrl+Enter)')
                         ->collapsible()
                         ->cloneable()
                         ->reorderable(false)
