@@ -178,14 +178,31 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                 // Add to system totals
                 $systemTotals['opening_qty'] += $projectTotals['opening_qty'];
                 $systemTotals['opening_value'] += $projectTotals['opening_value'];
-                $systemTotals['in_qty'] += $projectTotals['in_qty'];
-                $systemTotals['in_value'] += $projectTotals['in_value'];
-                $systemTotals['out_qty'] += $projectTotals['out_qty'];
-                $systemTotals['out_value'] += $projectTotals['out_value'];
                 $systemTotals['closing_qty'] += $projectTotals['closing_qty'];
                 $systemTotals['closing_value'] += $projectTotals['closing_value'];
             }
         }
+
+        // Build Central Hub section (as a separate report section)
+        $hubSection = $this->buildHubSection($date);
+        if (!empty($hubSection)) {
+            $reportSections[] = $hubSection;
+            
+            // Add hub opening/closing to system totals
+            $systemTotals['opening_qty'] += $hubSection['totals']['opening_qty'];
+            $systemTotals['opening_value'] += $hubSection['totals']['opening_value'];
+            $systemTotals['closing_qty'] += $hubSection['totals']['closing_qty'];
+            $systemTotals['closing_value'] += $hubSection['totals']['closing_value'];
+        }
+
+        // Calculate real system IN/OUT (only purchases and consumption, not transfers)
+        $realSystemIn = $this->getSystemRealInMovements($date);
+        $realSystemOut = $this->getSystemRealOutMovements($date);
+        
+        $systemTotals['in_qty'] = $realSystemIn['qty'];
+        $systemTotals['in_value'] = $realSystemIn['value'];
+        $systemTotals['out_qty'] = $realSystemOut['qty'];
+        $systemTotals['out_value'] = $realSystemOut['value'];
 
         // Add system-wide totals section at the end
         if (!empty($reportSections)) {
@@ -256,6 +273,158 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
             'out_value' => collect($items)->sum('out_value'),
             'closing_qty' => collect($items)->sum('closing_qty'),
             'closing_value' => collect($items)->sum('closing_value'),
+        ];
+    }
+
+    private function calculateHubTotals(\Carbon\Carbon $date): array
+    {
+        // Calculate hub opening value (all hub items before this date)
+        $hubOpeningTxn = InventoryTransaction::where('transaction_date', '<', $date->format('Y-m-d'))
+            ->whereNull('project_id')
+            ->whereIn('transaction_type', [
+                InventoryTransaction::TYPE_GOODS_RECEIPT,
+                InventoryTransaction::TYPE_PURCHASE,
+                InventoryTransaction::TYPE_CONSUMPTION,
+                InventoryTransaction::TYPE_DIRECT_CONSUMPTION,
+                InventoryTransaction::TYPE_ALLOCATION_OUT,
+                InventoryTransaction::TYPE_ALLOCATION_IN,
+                InventoryTransaction::TYPE_TRANSFER_OUT,
+                InventoryTransaction::TYPE_TRANSFER_IN,
+            ])
+            ->get();
+        
+        $hubOpeningValue = $hubOpeningTxn->sum('total_value');
+        $hubOpeningQty = $hubOpeningTxn->sum('quantity');
+
+        // Calculate hub closing value (all hub items up to and including this date)
+        $hubClosingTxn = InventoryTransaction::where('transaction_date', '<=', $date->format('Y-m-d'))
+            ->whereNull('project_id')
+            ->whereIn('transaction_type', [
+                InventoryTransaction::TYPE_GOODS_RECEIPT,
+                InventoryTransaction::TYPE_PURCHASE,
+                InventoryTransaction::TYPE_CONSUMPTION,
+                InventoryTransaction::TYPE_DIRECT_CONSUMPTION,
+                InventoryTransaction::TYPE_ALLOCATION_OUT,
+                InventoryTransaction::TYPE_ALLOCATION_IN,
+                InventoryTransaction::TYPE_TRANSFER_OUT,
+                InventoryTransaction::TYPE_TRANSFER_IN,
+            ])
+            ->get();
+        
+        $hubClosingValue = $hubClosingTxn->sum('total_value');
+        $hubClosingQty = $hubClosingTxn->sum('quantity');
+
+        return [
+            'opening_qty' => $hubOpeningQty,
+            'opening_value' => $hubOpeningValue,
+            'closing_qty' => $hubClosingQty,
+            'closing_value' => $hubClosingValue,
+        ];
+    }
+
+    private function buildHubSection(\Carbon\Carbon $date): ?array
+    {
+        $resources = Resource::with('transactions')->orderBy('name')->get();
+        $hubItems = [];
+
+        foreach ($resources as $resource) {
+            $reportItem = $this->buildResourceReportForHub($resource, $date);
+
+            if ($reportItem) {
+                $hubItems[] = $reportItem;
+            }
+        }
+
+        if (empty($hubItems)) {
+            return null;
+        }
+
+        $hubTotals = $this->calculateProjectTotals($hubItems);
+
+        return [
+            'project_id' => null,
+            'project_name' => 'CENTRAL HUB',
+            'is_hub' => true,
+            'items' => $hubItems,
+            'totals' => $hubTotals,
+        ];
+    }
+
+    private function buildResourceReportForHub(\App\Models\Resource $resource, \Carbon\Carbon $date): ?array
+    {
+        // Hub opening: all hub transactions before this date
+        $openingTxn = InventoryTransaction::where('resource_id', $resource->id)
+            ->where('transaction_date', '<', $date->format('Y-m-d'))
+            ->whereNull('project_id')
+            ->get();
+
+        $openingQty = $openingTxn->sum('quantity');
+        $openingValue = $openingTxn->sum('total_value');
+        $openingRate = $openingQty != 0 ? $openingValue / $openingQty : 0;
+
+        // Hub closing: all hub transactions up to and including this date
+        $closingTxn = InventoryTransaction::where('resource_id', $resource->id)
+            ->where('transaction_date', '<=', $date->format('Y-m-d'))
+            ->whereNull('project_id')
+            ->get();
+
+        $closingQty = $closingTxn->sum('quantity');
+        $closingValue = $closingTxn->sum('total_value');
+        $closingRate = $closingQty != 0 ? $closingValue / $closingQty : 0;
+
+        // Hub movements for this date (all types including allocations)
+        $inMovements = InventoryTransaction::where('resource_id', $resource->id)
+            ->where('transaction_date', $date->format('Y-m-d'))
+            ->whereNull('project_id')
+            ->where('quantity', '>', 0)
+            ->whereIn('transaction_type', [
+                InventoryTransaction::TYPE_GOODS_RECEIPT,
+                InventoryTransaction::TYPE_PURCHASE,
+                InventoryTransaction::TYPE_ALLOCATION_IN,
+                InventoryTransaction::TYPE_TRANSFER_IN,
+            ])
+            ->get();
+
+        $outMovements = InventoryTransaction::where('resource_id', $resource->id)
+            ->where('transaction_date', $date->format('Y-m-d'))
+            ->whereNull('project_id')
+            ->where('quantity', '<', 0)
+            ->whereIn('transaction_type', [
+                InventoryTransaction::TYPE_CONSUMPTION,
+                InventoryTransaction::TYPE_DIRECT_CONSUMPTION,
+                InventoryTransaction::TYPE_ALLOCATION_OUT,
+                InventoryTransaction::TYPE_TRANSFER_OUT,
+            ])
+            ->get();
+
+        $inQty = $inMovements->sum('quantity');
+        $inValue = $inMovements->sum('total_value');
+        $outQty = abs($outMovements->sum('quantity'));
+        $outValue = abs($outMovements->sum('total_value'));
+
+        // Only include if there are movements or stock exists
+        $hasMovements = $inQty > 0 || $outQty > 0;
+        $hasStock = $openingQty != 0 || $closingQty != 0;
+
+        if (!($hasMovements || $hasStock)) {
+            return null;
+        }
+
+        return [
+            'resource_name' => $resource->name,
+            'item_code' => $resource->sku,
+            'base_unit' => $resource->base_unit,
+            'opening_qty' => $openingQty,
+            'opening_value' => $openingValue,
+            'in_qty' => $inQty,
+            'in_value' => $inValue,
+            'out_qty' => $outQty,
+            'out_value' => $outValue,
+            'closing_qty' => $closingQty,
+            'avg_price' => $closingRate,
+            'closing_value' => $closingValue,
+            'suppliers' => '-',
+            'projects' => '-',
         ];
     }
 
@@ -385,6 +554,34 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
             ->join(', ');
 
         return $projectNames ?: '-';
+    }
+
+    private function getSystemRealInMovements(\Carbon\Carbon $date): array
+    {
+        // System-wide IN = only GOODS_RECEIPT and PURCHASE (real purchases entering system)
+        // NOT allocations or transfers (those are internal movements)
+        $transactions = InventoryTransaction::whereDate('transaction_date', $date->format('Y-m-d'))
+            ->whereIn('transaction_type', ['GOODS_RECEIPT', 'PURCHASE'])
+            ->get();
+        
+        return [
+            'qty' => $transactions->sum('quantity'),
+            'value' => $transactions->sum('total_value'),
+        ];
+    }
+
+    private function getSystemRealOutMovements(\Carbon\Carbon $date): array
+    {
+        // System-wide OUT = only CONSUMPTION and DIRECT_CONSUMPTION (items permanently leaving)
+        // NOT transfers or allocations (those are internal movements - items stay in system)
+        $transactions = InventoryTransaction::whereDate('transaction_date', $date->format('Y-m-d'))
+            ->whereIn('transaction_type', ['CONSUMPTION', 'DIRECT_CONSUMPTION'])
+            ->get();
+        
+        return [
+            'qty' => abs($transactions->sum('quantity')),
+            'value' => abs($transactions->sum('total_value')),
+        ];
     }
 
     public function downloadExcel()
