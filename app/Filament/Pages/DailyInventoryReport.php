@@ -529,8 +529,9 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                                 $styles[$row] = ['font' => ['bold' => true]];
                                 $row++;
                             } else {
-                                // Project name - ONLY row with blue background
-                                $styles[$row] = [
+                                // Project name - BLUE background across all columns
+                                $columnRange = 'A' . $row . ':M' . $row;
+                                $styles[$columnRange] = [
                                     'font' => ['bold' => true, 'size' => 12, 'color' => ['rgb' => 'FFFFFF']],
                                     'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '1E3A8A']],
                                 ];
