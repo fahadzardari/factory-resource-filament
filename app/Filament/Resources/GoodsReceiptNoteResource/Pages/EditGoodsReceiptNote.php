@@ -6,11 +6,18 @@ use App\Filament\Resources\GoodsReceiptNoteResource;
 use Filament\Actions;
 use Filament\Resources\Pages\EditRecord;
 use Filament\Notifications\Notification;
+use Illuminate\Auth\Access\AuthorizationException;
 
 class EditGoodsReceiptNote extends EditRecord
 {
     protected static string $resource = GoodsReceiptNoteResource::class;
     protected static string $view = 'filament.resources.goods-receipt-note-resource.pages.edit-goods-receipt-note';
+
+    public function mount(string|int $record): void
+    {
+        // Prevent editing of GRN records
+        throw new AuthorizationException('Goods Receipt Notes cannot be edited. Please delete and create a new one if changes are needed.');
+    }
 
     protected function getHeaderActions(): array
     {

@@ -127,7 +127,6 @@ class ResourceResource extends Resource
                 Tables\Columns\TextColumn::make('hub_stock')
                     ->label('Hub Stock')
                     ->numeric(decimalPlaces: 2)
-                    ->sortable()
                     ->color(fn ($state) => $state > 0 ? 'success' : 'danger')
                     ->weight(FontWeight::Bold)
                     ->description(fn ($record) => 'At central hub')

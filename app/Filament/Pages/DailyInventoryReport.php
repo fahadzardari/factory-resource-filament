@@ -91,10 +91,20 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
         try {
             $this->reportData = $this->buildReport($this->selectedDate, $this->selectedProjects);
             
+            // Count total items across all projects
+            $totalItems = 0;
+            $totalProjects = 0;
+            foreach ($this->reportData as $section) {
+                if (!($section['is_system_total'] ?? false)) {
+                    $totalItems += count($section['items']);
+                    $totalProjects++;
+                }
+            }
+            
             Notification::make()
                 ->success()
                 ->title('✅ Report Generated')
-                ->body("Daily report for " . $this->selectedDate->format('d-M-Y') . " with " . count($this->reportData) . " items")
+                ->body("Daily report for " . $this->selectedDate->format('d-M-Y') . " - " . $totalProjects . " project(s) with " . $totalItems . " items")
                 ->send();
         } catch (\Exception $e) {
             Notification::make()
@@ -108,57 +118,87 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
     private function buildReport(\Carbon\Carbon $date, array $projectIds): array
     {
         $resources = Resource::with('transactions')->orderBy('name')->get();
-        $report = [];
-
-        // If multiple projects selected, organize by project
-        if (!empty($projectIds) && count($projectIds) > 1) {
-            // Get project names
-            $projects = Project::whereIn('id', $projectIds)->get()->keyBy('id');
+        
+        // Determine which projects to include
+        if (empty($projectIds)) {
+            // SYSTEM-WIDE REPORT: Get all projects that have transactions up to this date
+            $projectIds = InventoryTransaction::where('transaction_date', '<=', $date->format('Y-m-d'))
+                ->whereNotNull('project_id')
+                ->distinct()
+                ->pluck('project_id')
+                ->values()
+                ->toArray();
             
-            // Initialize report structure: [project_id => [items]]
-            foreach ($projectIds as $projectId) {
-                $report[$projectId] = [];
-            }
-
-            // Build report for each resource and each project separately
-            foreach ($resources as $resource) {
-                foreach ($projectIds as $projectId) {
-                    $reportItem = $this->buildResourceReportForProject($resource, $date, $projectId);
-                    
-                    if ($reportItem) {
-                        $report[$projectId][] = $reportItem;
-                    }
-                }
-            }
-
-            // Format for view with project grouping
-            $formattedReport = [];
-            foreach ($projectIds as $projectId) {
-                $items = $report[$projectId];
-                if (!empty($items)) {
-                    $formattedReport[] = [
-                        'project_id' => $projectId,
-                        'project_name' => $projects[$projectId]->name ?? 'Project ' . $projectId,
-                        'items' => $items,
-                        'totals' => $this->calculateProjectTotals($items),
-                    ];
-                }
-            }
-
-            return $formattedReport;
+            // If no project transactions, still show hub/system inventory
+            $includeHub = true;
         } else {
-            // Single project or hub - return flat report
+            // FILTERED REPORT: Only show selected projects
+            $includeHub = false;
+        }
+
+        // Get all projects for reference
+        $allProjects = Project::whereIn('id', $projectIds)->get()->keyBy('id');
+
+        // Build report grouped by project
+        $reportSections = [];
+        $systemTotals = [
+            'opening_qty' => 0,
+            'opening_value' => 0,
+            'in_qty' => 0,
+            'in_value' => 0,
+            'out_qty' => 0,
+            'out_value' => 0,
+            'closing_qty' => 0,
+            'closing_value' => 0,
+        ];
+
+        // Build report for each project
+        foreach ($projectIds as $projectId) {
+            $projectItems = [];
+
             foreach ($resources as $resource) {
-                $projectId = !empty($projectIds) ? $projectIds[0] : null;
                 $reportItem = $this->buildResourceReportForProject($resource, $date, $projectId);
-                
+
                 if ($reportItem) {
-                    $report[] = $reportItem;
+                    $projectItems[] = $reportItem;
                 }
             }
 
-            return $report;
+            // Only include project section if it has items
+            if (!empty($projectItems)) {
+                $projectTotals = $this->calculateProjectTotals($projectItems);
+                
+                $reportSections[] = [
+                    'project_id' => $projectId,
+                    'project_name' => $allProjects[$projectId]->name ?? 'Project ' . $projectId,
+                    'items' => $projectItems,
+                    'totals' => $projectTotals,
+                ];
+
+                // Add to system totals
+                $systemTotals['opening_qty'] += $projectTotals['opening_qty'];
+                $systemTotals['opening_value'] += $projectTotals['opening_value'];
+                $systemTotals['in_qty'] += $projectTotals['in_qty'];
+                $systemTotals['in_value'] += $projectTotals['in_value'];
+                $systemTotals['out_qty'] += $projectTotals['out_qty'];
+                $systemTotals['out_value'] += $projectTotals['out_value'];
+                $systemTotals['closing_qty'] += $projectTotals['closing_qty'];
+                $systemTotals['closing_value'] += $projectTotals['closing_value'];
+            }
         }
+
+        // Add system-wide totals section at the end
+        if (!empty($reportSections)) {
+            $reportSections[] = [
+                'project_id' => null,
+                'project_name' => '📊 SYSTEM WIDE TOTAL',
+                'items' => [],
+                'totals' => $systemTotals,
+                'is_system_total' => true,
+            ];
+        }
+
+        return $reportSections;
     }
 
     private function buildResourceReportForProject(\App\Models\Resource $resource, \Carbon\Carbon $date, ?int $projectId): ?array
@@ -359,157 +399,179 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
         }
 
         try {
-            $fileName = 'Inventory_Report_' . $this->selectedDate->format('Y-m-d') . '.csv';
+            $fileName = 'Inventory_Report_' . $this->selectedDate->format('Y-m-d') . '.xlsx';
             
-            $headers = [
-                'Content-Type' => 'text/csv; charset=utf-8',
-                'Content-Disposition' => "attachment; filename=\"$fileName\"",
-            ];
+            // Create export class with report data
+            $export = new class($this->reportData, $this->selectedDate) implements \Maatwebsite\Excel\Concerns\FromArray, 
+                                     \Maatwebsite\Excel\Concerns\WithStyles,
+                                     \Maatwebsite\Excel\Concerns\WithColumnWidths
+                {
+                    private $reportData;
+                    private $selectedDate;
 
-            // Detect if report is grouped by projects or flat
-            $isGroupedByProject = !empty($this->reportData) && isset($this->reportData[0]['project_id']);
-
-            $callback = function () use ($isGroupedByProject) {
-                $file = fopen('php://output', 'w');
-                
-                // Write UTF-8 BOM for proper Excel character encoding
-                fputs($file, "\xEF\xBB\xBF");
-                
-                if ($isGroupedByProject) {
-                    // GROUPED REPORT: Write by project
-                    $isFirstProject = true;
-                    
-                    foreach ($this->reportData as $projectSection) {
-                        // Add blank row between projects (except first)
-                        if (!$isFirstProject) {
-                            fputcsv($file, []);
-                        }
-                        $isFirstProject = false;
-
-                        // Write project header
-                        fputcsv($file, [
-                            'PROJECT: ' . $projectSection['project_name'],
-                        ]);
-
-                        // Write column headers
-                        fputcsv($file, [
-                            'Item Code',
-                            'Item Description',
-                            'Unit',
-                            'Opening Qty',
-                            'Opening Value',
-                            'In Qty',
-                            'In Value',
-                            'Out Qty',
-                            'Out Value',
-                            'Closing Qty',
-                            'Avg Price',
-                            'Closing Value',
-                            'Projects',
-                            'Supplier',
-                        ]);
-
-                        // Write items for this project
-                        foreach ($projectSection['items'] as $item) {
-                            fputcsv($file, [
-                                $item['item_code'],
-                                $item['resource_name'],
-                                $item['base_unit'],
-                                round($item['opening_qty'], 2),
-                                round($item['opening_value'], 2),
-                                round($item['in_qty'], 2),
-                                round($item['in_value'], 2),
-                                round($item['out_qty'], 2),
-                                round($item['out_value'], 2),
-                                round($item['closing_qty'], 2),
-                                round($item['avg_price'], 2),
-                                round($item['closing_value'], 2),
-                                $item['projects'],
-                                $item['suppliers'],
-                            ]);
-                        }
-
-                        // Write project totals
-                        fputcsv($file, [
-                            $projectSection['project_name'] . ' TOTALS',
-                            '',
-                            '',
-                            round($projectSection['totals']['opening_qty'], 2),
-                            round($projectSection['totals']['opening_value'], 2),
-                            round($projectSection['totals']['in_qty'], 2),
-                            round($projectSection['totals']['in_value'], 2),
-                            round($projectSection['totals']['out_qty'], 2),
-                            round($projectSection['totals']['out_value'], 2),
-                            round($projectSection['totals']['closing_qty'], 2),
-                            '',
-                            round($projectSection['totals']['closing_value'], 2),
-                            '',
-                            '',
-                        ]);
-                    }
-                } else {
-                    // FLAT REPORT: Single project or hub
-                    // Write column headers
-                    fputcsv($file, [
-                        'Item Code',
-                        'Item Description',
-                        'Unit',
-                        'Opening Qty',
-                        'Opening Value',
-                        'In Qty',
-                        'In Value',
-                        'Out Qty',
-                        'Out Value',
-                        'Closing Qty',
-                        'Avg Price',
-                        'Closing Value',
-                        'Projects',
-                        'Supplier',
-                    ]);
-
-                    // Write data rows
-                    foreach ($this->reportData as $item) {
-                        fputcsv($file, [
-                            $item['item_code'],
-                            $item['resource_name'],
-                            $item['base_unit'],
-                            round($item['opening_qty'], 2),
-                            round($item['opening_value'], 2),
-                            round($item['in_qty'], 2),
-                            round($item['in_value'], 2),
-                            round($item['out_qty'], 2),
-                            round($item['out_value'], 2),
-                            round($item['closing_qty'], 2),
-                            round($item['avg_price'], 2),
-                            round($item['closing_value'], 2),
-                            $item['projects'],
-                            $item['suppliers'],
-                        ]);
+                    public function __construct($reportData, $selectedDate)
+                    {
+                        $this->reportData = $reportData;
+                        $this->selectedDate = $selectedDate;
                     }
 
-                    // Write totals row
-                    fputcsv($file, [
-                        'TOTAL',
-                        '',
-                        '',
-                        round(collect($this->reportData)->sum('opening_qty'), 2),
-                        round(collect($this->reportData)->sum('opening_value'), 2),
-                        round(collect($this->reportData)->sum('in_qty'), 2),
-                        round(collect($this->reportData)->sum('in_value'), 2),
-                        round(collect($this->reportData)->sum('out_qty'), 2),
-                        round(collect($this->reportData)->sum('out_value'), 2),
-                        round(collect($this->reportData)->sum('closing_qty'), 2),
-                        '',
-                        round(collect($this->reportData)->sum('closing_value'), 2),
-                        '',
-                        '',
-                    ]);
-                }
+                    public function array(): array
+                    {
+                        $rows = [];
 
-                fclose($file);
-            };
+                        // Row 1: Title
+                        $rows[] = ['SYSTEM WIDE INVENTORY REPORT - ' . $this->selectedDate->format('d M Y')];
+                        // Row 2: blank spacer (use [''] not [] so row actually gets created)
+                        $rows[] = [''];
 
-            return response()->stream($callback, 200, $headers);
+                        foreach ($this->reportData as $projectSection) {
+                            if ($projectSection['is_system_total'] ?? false) {
+                                // Blank spacer row before system total
+                                $rows[] = [''];
+                                // System total header
+                                $rows[] = ['SYSTEM WIDE TOTAL'];
+                                // Column headers
+                                $rows[] = [
+                                    'Metric',
+                                    'Opening Value (AED)',
+                                    'In Value (AED)',
+                                    'Out Value (AED)',
+                                    'Closing Value (AED)',
+                                ];
+                                // Values
+                                $rows[] = [
+                                    'TOTAL',
+                                    round($projectSection['totals']['opening_value'], 2),
+                                    round($projectSection['totals']['in_value'], 2),
+                                    round($projectSection['totals']['out_value'], 2),
+                                    round($projectSection['totals']['closing_value'], 2),
+                                ];
+                            } else {
+                                // Project name row
+                                $rows[] = [strtoupper($projectSection['project_name'])];
+                                // Column headers
+                                $rows[] = [
+                                    'Item Code',
+                                    'Item Description',
+                                    'Unit',
+                                    'Opening Qty',
+                                    'Opening Value',
+                                    'In Qty',
+                                    'In Value',
+                                    'Out Qty',
+                                    'Out Value',
+                                    'Closing Qty',
+                                    'Avg Price',
+                                    'Closing Value',
+                                    'Supplier',
+                                ];
+                                // Item rows - always show 0 for zero values
+                                foreach ($projectSection['items'] as $item) {
+                                    $rows[] = [
+                                        $item['item_code'],
+                                        $item['resource_name'],
+                                        $item['base_unit'],
+                                        round($item['opening_qty'], 2),
+                                        round($item['opening_value'], 2),
+                                        round($item['in_qty'], 2),
+                                        round($item['in_value'], 2),
+                                        round($item['out_qty'], 2),
+                                        round($item['out_value'], 2),
+                                        round($item['closing_qty'], 2),
+                                        round($item['avg_price'], 2),
+                                        round($item['closing_value'], 2),
+                                        $item['suppliers'],
+                                    ];
+                                }
+                                // Project totals row
+                                $rows[] = [
+                                    strtoupper($projectSection['project_name']) . ' TOTALS',
+                                    '',
+                                    '',
+                                    round($projectSection['totals']['opening_qty'], 2),
+                                    round($projectSection['totals']['opening_value'], 2),
+                                    round($projectSection['totals']['in_qty'], 2),
+                                    round($projectSection['totals']['in_value'], 2),
+                                    round($projectSection['totals']['out_qty'], 2),
+                                    round($projectSection['totals']['out_value'], 2),
+                                    round($projectSection['totals']['closing_qty'], 2),
+                                    '',
+                                    round($projectSection['totals']['closing_value'], 2),
+                                    '',
+                                ];
+                            }
+                        }
+
+                        return $rows;
+                    }
+
+                    public function styles(\PhpOffice\PhpSpreadsheet\Worksheet\Worksheet $sheet)
+                    {
+                        $styles = [];
+                        $row = 1;
+
+                        // Row 1: Title
+                        $styles[$row] = ['font' => ['bold' => true, 'size' => 14]];
+                        $row++; // row 2: blank spacer
+                        $row++; // row 3: first data row
+
+                        foreach ($this->reportData as $projectSection) {
+                            if ($projectSection['is_system_total'] ?? false) {
+                                // blank spacer
+                                $row++;
+                                // SYSTEM WIDE TOTAL header
+                                $styles[$row] = ['font' => ['bold' => true, 'size' => 12]];
+                                $row++;
+                                // Metric column headers
+                                $styles[$row] = ['font' => ['bold' => true]];
+                                $row++;
+                                // Values row
+                                $styles[$row] = ['font' => ['bold' => true]];
+                                $row++;
+                            } else {
+                                // Project name - ONLY row with blue background
+                                $styles[$row] = [
+                                    'font' => ['bold' => true, 'size' => 12, 'color' => ['rgb' => 'FFFFFF']],
+                                    'fill' => ['fillType' => \PhpOffice\PhpSpreadsheet\Style\Fill::FILL_SOLID, 'startColor' => ['rgb' => '1E3A8A']],
+                                ];
+                                $row++;
+                                // Column headers - bold
+                                $styles[$row] = ['font' => ['bold' => true]];
+                                $row++;
+                                // Item rows - no styling
+                                foreach ($projectSection['items'] as $item) {
+                                    $row++;
+                                }
+                                // Totals row - bold
+                                $styles[$row] = ['font' => ['bold' => true]];
+                                $row++;
+                            }
+                        }
+
+                        return $styles;
+                    }
+
+                    public function columnWidths(): array
+                    {
+                        return [
+                            'A' => 15,
+                            'B' => 30,
+                            'C' => 12,
+                            'D' => 14,
+                            'E' => 16,
+                            'F' => 12,
+                            'G' => 14,
+                            'H' => 12,
+                            'I' => 14,
+                            'J' => 14,
+                            'K' => 12,
+                            'L' => 16,
+                            'M' => 25,
+                        ];
+                    }
+                };
+
+            return \Maatwebsite\Excel\Facades\Excel::download($export, $fileName);
         } catch (\Exception $e) {
             Notification::make()
                 ->danger()
