@@ -201,6 +201,7 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
             'avg_price' => $closingTxn['rate'],
             'closing_value' => $closingTxn['value'],
             'suppliers' => $this->getSuppliersForDate($resource->id, $date, $projectId ? [$projectId] : []),
+            'projects' => $this->getProjectsForResource($resource->id, $projectId ? [$projectId] : [], $this->selectedProjects ?? []),
         ];
     }
 
@@ -313,18 +314,37 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
         return $suppliers ?: '-';
     }
 
-    private function getProjectsForResource(int $resourceId): string
+    private function getProjectsForResource(int $resourceId, array $reportProjectIds = [], array $selectedProjectIds = []): string
     {
-        $projectNames = InventoryTransaction::where('resource_id', $resourceId)
+        // Get all projects where this resource has been used
+        $allProjects = InventoryTransaction::where('resource_id', $resourceId)
+            ->whereNotNull('project_id')
             ->distinct()
             ->with('project')
             ->get()
-            ->pluck('project.name')
-            ->filter()
-            ->unique()
+            ->pluck('project.id')
+            ->unique();
+
+        // Filter based on context
+        if (!empty($selectedProjectIds)) {
+            // Filtered report: Only show projects from the selected filter
+            $projectIds = $allProjects->intersect($selectedProjectIds);
+        } else {
+            // System-wide report: Show all projects where resource is used
+            $projectIds = $allProjects;
+        }
+
+        // Get project names
+        if ($projectIds->isEmpty()) {
+            return '-';
+        }
+
+        $projectNames = Project::whereIn('id', $projectIds->values())
+            ->orderBy('name')
+            ->pluck('name')
             ->join(', ');
 
-        return $projectNames ?: ' ';
+        return $projectNames ?: '-';
     }
 
     public function downloadExcel()
@@ -385,6 +405,7 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                             'Closing Qty',
                             'Avg Price',
                             'Closing Value',
+                            'Projects',
                             'Supplier',
                         ]);
 
@@ -403,6 +424,7 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                                 round($item['closing_qty'], 2),
                                 round($item['avg_price'], 2),
                                 round($item['closing_value'], 2),
+                                $item['projects'],
                                 $item['suppliers'],
                             ]);
                         }
@@ -422,6 +444,7 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                             '',
                             round($projectSection['totals']['closing_value'], 2),
                             '',
+                            '',
                         ]);
                     }
                 } else {
@@ -440,6 +463,7 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                         'Closing Qty',
                         'Avg Price',
                         'Closing Value',
+                        'Projects',
                         'Supplier',
                     ]);
 
@@ -458,6 +482,7 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                             round($item['closing_qty'], 2),
                             round($item['avg_price'], 2),
                             round($item['closing_value'], 2),
+                            $item['projects'],
                             $item['suppliers'],
                         ]);
                     }
@@ -476,6 +501,7 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                         round(collect($this->reportData)->sum('closing_qty'), 2),
                         '',
                         round(collect($this->reportData)->sum('closing_value'), 2),
+                        '',
                         '',
                     ]);
                 }

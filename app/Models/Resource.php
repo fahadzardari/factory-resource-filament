@@ -32,6 +32,21 @@ class Resource extends Model
     }
 
     /**
+     * Get all projects where this resource has been used
+     */
+    public function getProjectsUsedIn(): \Illuminate\Support\Collection
+    {
+        return $this->transactions()
+            ->whereNotNull('project_id')
+            ->distinct()
+            ->with('project')
+            ->get()
+            ->pluck('project')
+            ->filter()
+            ->unique('id');
+    }
+
+    /**
      * Get hub stock (current balance in central warehouse)
      */
     public function getHubStockAttribute(): float

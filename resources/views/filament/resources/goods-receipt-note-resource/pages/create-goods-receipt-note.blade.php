@@ -1,8 +1,7 @@
 <x-filament-panels::page>
     {{ $this->form }}
-</x-filament-panels::page>
 
-<script>
+    <script>
 (function() {
     'use strict';
     
@@ -132,3 +131,4 @@ kbd {
     font-family: monospace;
 }
 </style>
+</x-filament-panels::page>
