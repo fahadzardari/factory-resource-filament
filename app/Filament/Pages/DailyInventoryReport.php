@@ -183,16 +183,18 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
             }
         }
 
-        // Build Central Hub section (as a separate report section)
-        $hubSection = $this->buildHubSection($date);
-        if (!empty($hubSection)) {
-            $reportSections[] = $hubSection;
-            
-            // Add hub opening/closing to system totals
-            $systemTotals['opening_qty'] += $hubSection['totals']['opening_qty'];
-            $systemTotals['opening_value'] += $hubSection['totals']['opening_value'];
-            $systemTotals['closing_qty'] += $hubSection['totals']['closing_qty'];
-            $systemTotals['closing_value'] += $hubSection['totals']['closing_value'];
+        // Build Central Hub section (as a separate report section) - Only for system-wide reports
+        if ($includeHub) {
+            $hubSection = $this->buildHubSection($date);
+            if (!empty($hubSection)) {
+                $reportSections[] = $hubSection;
+                
+                // Add hub opening/closing to system totals
+                $systemTotals['opening_qty'] += $hubSection['totals']['opening_qty'];
+                $systemTotals['opening_value'] += $hubSection['totals']['opening_value'];
+                $systemTotals['closing_qty'] += $hubSection['totals']['closing_qty'];
+                $systemTotals['closing_value'] += $hubSection['totals']['closing_value'];
+            }
         }
 
         // Calculate real system IN/OUT (only purchases and consumption, not transfers)
@@ -204,8 +206,8 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
         $systemTotals['out_qty'] = $realSystemOut['qty'];
         $systemTotals['out_value'] = $realSystemOut['value'];
 
-        // Add system-wide totals section at the end
-        if (!empty($reportSections)) {
+        // Add system-wide totals section at the end - Only for system-wide reports
+        if (!empty($reportSections) && $includeHub) {
             $reportSections[] = [
                 'project_id' => null,
                 'project_name' => '📊 SYSTEM WIDE TOTAL',
@@ -638,10 +640,10 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                                 // Values
                                 $rows[] = [
                                     'TOTAL',
-                                    round($projectSection['totals']['opening_value'], 2),
-                                    round($projectSection['totals']['in_value'], 2),
-                                    round($projectSection['totals']['out_value'], 2),
-                                    round($projectSection['totals']['closing_value'], 2),
+                                    ($projectSection['totals']['opening_value'] ?? 0) != 0 ? (float)$projectSection['totals']['opening_value'] : '-',
+                                    ($projectSection['totals']['in_value'] ?? 0) != 0 ? (float)$projectSection['totals']['in_value'] : '-',
+                                    ($projectSection['totals']['out_value'] ?? 0) != 0 ? (float)$projectSection['totals']['out_value'] : '-',
+                                    ($projectSection['totals']['closing_value'] ?? 0) != 0 ? (float)$projectSection['totals']['closing_value'] : '-',
                                 ];
                             } else {
                                 // Project name row
@@ -662,21 +664,21 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                                     'Closing Value',
                                     'Supplier',
                                 ];
-                                // Item rows - always show 0 for zero values
+                                // Item rows - show hyphen for zero values
                                 foreach ($projectSection['items'] as $item) {
                                     $rows[] = [
                                         $item['item_code'],
                                         $item['resource_name'],
                                         $item['base_unit'],
-                                        round($item['opening_qty'], 2),
-                                        round($item['opening_value'], 2),
-                                        round($item['in_qty'], 2),
-                                        round($item['in_value'], 2),
-                                        round($item['out_qty'], 2),
-                                        round($item['out_value'], 2),
-                                        round($item['closing_qty'], 2),
-                                        round($item['avg_price'], 2),
-                                        round($item['closing_value'], 2),
+                                        ($item['opening_qty'] ?? 0) != 0 ? (float)$item['opening_qty'] : '-',
+                                        ($item['opening_value'] ?? 0) != 0 ? (float)$item['opening_value'] : '-',
+                                        ($item['in_qty'] ?? 0) != 0 ? (float)$item['in_qty'] : '-',
+                                        ($item['in_value'] ?? 0) != 0 ? (float)$item['in_value'] : '-',
+                                        ($item['out_qty'] ?? 0) != 0 ? (float)$item['out_qty'] : '-',
+                                        ($item['out_value'] ?? 0) != 0 ? (float)$item['out_value'] : '-',
+                                        ($item['closing_qty'] ?? 0) != 0 ? (float)$item['closing_qty'] : '-',
+                                        ($item['avg_price'] ?? 0) != 0 ? (float)$item['avg_price'] : '-',
+                                        ($item['closing_value'] ?? 0) != 0 ? (float)$item['closing_value'] : '-',
                                         $item['suppliers'],
                                     ];
                                 }
@@ -685,15 +687,15 @@ class DailyInventoryReport extends Page implements Forms\Contracts\HasForms
                                     strtoupper($projectSection['project_name']) . ' TOTALS',
                                     '',
                                     '',
-                                    round($projectSection['totals']['opening_qty'], 2),
-                                    round($projectSection['totals']['opening_value'], 2),
-                                    round($projectSection['totals']['in_qty'], 2),
-                                    round($projectSection['totals']['in_value'], 2),
-                                    round($projectSection['totals']['out_qty'], 2),
-                                    round($projectSection['totals']['out_value'], 2),
-                                    round($projectSection['totals']['closing_qty'], 2),
-                                    '',
-                                    round($projectSection['totals']['closing_value'], 2),
+                                    ($projectSection['totals']['opening_qty'] ?? 0) != 0 ? (float)$projectSection['totals']['opening_qty'] : '-',
+                                    ($projectSection['totals']['opening_value'] ?? 0) != 0 ? (float)$projectSection['totals']['opening_value'] : '-',
+                                    ($projectSection['totals']['in_qty'] ?? 0) != 0 ? (float)$projectSection['totals']['in_qty'] : '-',
+                                    ($projectSection['totals']['in_value'] ?? 0) != 0 ? (float)$projectSection['totals']['in_value'] : '-',
+                                    ($projectSection['totals']['out_qty'] ?? 0) != 0 ? (float)$projectSection['totals']['out_qty'] : '-',
+                                    ($projectSection['totals']['out_value'] ?? 0) != 0 ? (float)$projectSection['totals']['out_value'] : '-',
+                                    ($projectSection['totals']['closing_qty'] ?? 0) != 0 ? (float)$projectSection['totals']['closing_qty'] : '-',
+                                    '-',
+                                    ($projectSection['totals']['closing_value'] ?? 0) != 0 ? (float)$projectSection['totals']['closing_value'] : '-',
                                     '',
                                 ];
                             }
