@@ -267,8 +267,7 @@ class GoodsReceiptNoteResource extends Resource
                     ->label('GRN #')
                     ->searchable()
                     ->sortable()
-                    ->weight('bold')
-                    ->url(fn ($record) => route('filament.admin.resources.goods-receipt-notes.edit', $record)),
+                    ->weight('bold'),
 
                 Tables\Columns\TextColumn::make('supplier.name')
                     ->label('Supplier')
@@ -356,15 +355,10 @@ class GoodsReceiptNoteResource extends Resource
                     }),
             ])
             ->actions([
-                // Tables\Actions\EditAction::make(),  // Commented out - GRN editing disabled
-                Tables\Actions\DeleteAction::make()
-                    ->requiresConfirmation(),
+                Tables\Actions\ViewAction::make(),
             ])
-            ->bulkActions([
-                Tables\Actions\BulkActionGroup::make([
-                    Tables\Actions\DeleteBulkAction::make(),
-                ]),
-            ])
+            ->recordUrl(fn ($record) => static::getUrl('view', ['record' => $record]))
+            ->bulkActions([])
             ->defaultSort('receipt_date', 'desc');
     }
 
@@ -373,6 +367,7 @@ class GoodsReceiptNoteResource extends Resource
         return [
             'index' => \App\Filament\Resources\GoodsReceiptNoteResource\Pages\ListGoodsReceiptNotes::route('/'),
             'create' => \App\Filament\Resources\GoodsReceiptNoteResource\Pages\CreateGoodsReceiptNote::route('/create'),
+            'view' => \App\Filament\Resources\GoodsReceiptNoteResource\Pages\ViewGoodsReceiptNote::route('/{record}'),
             'edit' => \App\Filament\Resources\GoodsReceiptNoteResource\Pages\EditGoodsReceiptNote::route('/{record}/edit'),
         ];
     }
