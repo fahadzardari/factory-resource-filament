@@ -20,11 +20,12 @@ class StatsOverviewWidget extends BaseWidget
         
         // Calculate total hub inventory value (ledger-based)
         $hubInventoryValue = InventoryTransaction::whereNull('project_id')
-            ->sum(DB::raw('quantity * unit_price'));
+                    ->sum('total_value');
+
         
         // Calculate total allocated value (inventory at all project sites)
         $allocatedValue = InventoryTransaction::whereNotNull('project_id')
-            ->sum(DB::raw('quantity * unit_price'));
+            ->sum('total_value');
         
         // Count recent transactions
         $todayTransactions = InventoryTransaction::whereDate('transaction_date', today())->count();
